@@ -62,19 +62,16 @@ export default function ActiveOrdersPageWithTRPC() {
     refetchOnWindowFocus: false,
   })
 
-  // Filter orders
-  const filteredOrders = orders.filter((order: any) => {
+  // Filter orders - ONLY show active orders (waiting for OTP)
+  const activeOrdersList = orders.filter((order: any) => !order.isused)  // Only waiting for OTP
+
+  const filteredOrders = activeOrdersList.filter((order: any) => {
     const matchesSearch =
       order.number?.toString().includes(search) ||
       order.country?.toLowerCase().includes(search.toLowerCase()) ||
       order.service?.toLowerCase().includes(search.toLowerCase())
 
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "active" && !order.isused) ||
-      (statusFilter === "completed" && order.isused)
-
-    return matchesSearch && matchesStatus
+    return matchesSearch
   })
 
   // Pagination
@@ -85,10 +82,11 @@ export default function ActiveOrdersPageWithTRPC() {
   )
 
   // Stats - based on isused (OTP received) status
-  const totalOrders = orders.length
-  const activeOrders = orders.filter((o: any) => !o.isused).length  // Still waiting for OTP
-  const completedOrders = orders.filter((o: any) => o.isused).length  // OTP received
-  const expiredOrders = orders.filter((o: any) => !o.active && !o.isused).length  // Timed out without OTP
+  // Stats - only count active orders (waiting for OTP)
+  const totalOrders = activeOrdersList.length
+  const activeOrders = activeOrdersList.filter((o: any) => o.active).length
+  const completedOrders = 0  // Completed orders don't appear on this page
+  const expiredOrders = 0    // Expired orders don't appear on this page
 
   const getStatusBadge = (order: Order) => {
     // If OTP has been received, it's completed
@@ -157,12 +155,12 @@ export default function ActiveOrdersPageWithTRPC() {
         </Card>
       </div>
 
-      {/* Search and Filter */}
+      {/* Search (only searching active orders) */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
           <Input
-            placeholder="Search orders..."
+            placeholder="Search active orders..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -171,22 +169,6 @@ export default function ActiveOrdersPageWithTRPC() {
             className="pl-10"
           />
         </div>
-        <Select
-          value={statusFilter}
-          onValueChange={(value: any) => {
-            setStatusFilter(value)
-            setCurrentPage(1)
-          }}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Filter status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Orders</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
       {/* Orders Table */}
