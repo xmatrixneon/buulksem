@@ -71,8 +71,8 @@ export default function ActiveOrdersPageWithTRPC() {
 
     const matchesStatus =
       statusFilter === "all" ||
-      (statusFilter === "active" && order.active) ||
-      (statusFilter === "completed" && !order.active)
+      (statusFilter === "active" && !order.isused) ||
+      (statusFilter === "completed" && order.isused)
 
     return matchesSearch && matchesStatus
   })
@@ -84,19 +84,22 @@ export default function ActiveOrdersPageWithTRPC() {
     currentPage * itemsPerPage
   )
 
-  // Stats
+  // Stats - based on isused (OTP received) status
   const totalOrders = orders.length
-  const activeOrders = orders.filter((o: any) => o.active).length
-  const completedOrders = orders.filter((o: any) => !o.active && o.isused).length
-  const expiredOrders = orders.filter((o: any) => !o.active && !o.isused).length
+  const activeOrders = orders.filter((o: any) => !o.isused).length  // Still waiting for OTP
+  const completedOrders = orders.filter((o: any) => o.isused).length  // OTP received
+  const expiredOrders = orders.filter((o: any) => !o.active && !o.isused).length  // Timed out without OTP
 
   const getStatusBadge = (order: Order) => {
+    // If OTP has been received, it's completed
+    if (order.isused) {
+      return <Badge className="bg-green-500 hover:bg-green-600"><CheckCircle className="h-3 w-3 mr-1" /> Completed</Badge>
+    }
+    // If order is no longer active but never received OTP, it's expired
     if (!order.active) {
-      if (order.isused) {
-        return <Badge className="bg-green-500 hover:bg-green-600"><CheckCircle className="h-3 w-3 mr-1" /> Completed</Badge>
-      }
       return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" /> Expired</Badge>
     }
+    // Still active and waiting for OTP
     return <Badge className="bg-blue-500 hover:bg-blue-600"><Clock className="h-3 w-3 mr-1" /> Active</Badge>
   }
 
