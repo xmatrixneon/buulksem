@@ -918,9 +918,9 @@ export const appRouter = router({
         prisma.device.count({ where: { status: 'online' } })
       ])
 
-      // Get cron status
+      // Get cron status - fetchOrders contains the last OTP fetch time
       const cronStatus = await prisma.cron.findFirst({
-        where: { name: 'status-sync' }
+        where: { name: 'fetchOrders' }
       })
 
       return {
