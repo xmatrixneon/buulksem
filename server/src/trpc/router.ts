@@ -918,10 +918,11 @@ export const appRouter = router({
         prisma.device.count({ where: { status: 'online' } })
       ])
 
-      // Get cron status - syncStatus contains the last device sync time
-      const cronStatus = await prisma.cron.findFirst({
-        where: { name: 'syncStatus' }
-      })
+      // Get cron status - both device sync and OTP fetch times
+      const [syncCron, fetchCron] = await Promise.all([
+        prisma.cron.findFirst({ where: { name: 'syncStatus' } }),
+        prisma.cron.findFirst({ where: { name: 'fetchOrders' } })
+      ])
 
       return {
         totalNumbers,
@@ -930,7 +931,8 @@ export const appRouter = router({
         todayOrders,
         totalDevices,
         activeDevices,
-        lastSync: cronStatus?.lastRun || null,
+        lastDeviceSync: syncCron?.lastRun || null,
+        lastOtpFetch: fetchCron?.lastRun || null,
         istTime: istDate.toISOString()
       }
     }),

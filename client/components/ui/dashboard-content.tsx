@@ -63,18 +63,33 @@ export default function DashboardContent() {
       </div>
 
       {/* Last Sync Status */}
-      <Card>
-        <CardContent className="p-4 space-y-2">
-          <div className="flex items-center gap-3">
-            <Clock className="h-5 w-5" />
-            <span className="font-medium">Last Device Sync:</span>
-            <Badge variant={isStale(activationData?.lastSync) ? "destructive" : "default"} className="text-sm">
-              {formatIST(activationData?.lastSync)}
-              {isStale(activationData?.lastSync) && " (Stale)"}
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-3">
+              <Clock className="h-5 w-5" />
+              <span className="font-medium">Last Device Sync:</span>
+              <Badge variant={isStale(activationData?.lastDeviceSync) ? "destructive" : "default"} className="text-sm">
+                {formatIST(activationData?.lastDeviceSync)}
+                {isStale(activationData?.lastDeviceSync) && " (Stale)"}
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-3">
+              <RefreshCw className="h-5 w-5" />
+              <span className="font-medium">Last OTP Fetch:</span>
+              <Badge variant={isStale(activationData?.lastOtpFetch) ? "destructive" : "default"} className="text-sm">
+                {formatIST(activationData?.lastOtpFetch)}
+                {isStale(activationData?.lastOtpFetch) && " (Stale)"}
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {isLoading ? (
         <div className="flex justify-center items-center py-14">
