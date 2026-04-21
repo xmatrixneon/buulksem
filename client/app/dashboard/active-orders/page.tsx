@@ -81,9 +81,8 @@ export default function ActiveOrdersPageWithTRPC() {
     currentPage * itemsPerPage
   )
 
-  // Stats - based on isused (OTP received) status
-  // Stats - only count active orders (waiting for OTP)
-  const totalOrders = activeOrdersList.length
+  // Stats - Total orders (all), Active (waiting for OTP and still active)
+  const totalOrders = orders.length
   const activeOrders = activeOrdersList.filter((o: any) => o.active).length
 
   const getStatusBadge = (order: Order) => {
