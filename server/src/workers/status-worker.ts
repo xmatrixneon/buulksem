@@ -1,0 +1,108 @@
+/**
+ * Status Worker
+ *
+ * Synchronizes device status from the database with the WebSocket manager.
+ * Ensures accurate device online/offline tracking.
+ */
+
+import { Worker } from 'bullmq'
+import { getRedis } from '../queues/redis'
+import { statusQueue, STATUS_INTERVAL } from '../queues/device-status'
+import { handleStatusJob } from '../jobs/handlers/status-handler'
+import { withJobLogging } from '../jobs/utils/job-logger'
+import { getWorkerConcurrency } from '../jobs/utils/job-options'
+
+// Delay to use when scheduling next job after a failure (to prevent rapid retry loops)
+const ERROR_RETRY_DELAY = parseInt(process.env.BULLMQ_ERROR_RETRY_DELAY || '30000', 10)
+
+// Global error handlers to prevent worker crashes
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Status] Unhandled Rejection at:', promise, 'reason:', reason)
+  // Don't exit - let PM2 restart if needed
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('[Status] Uncaught Exception:', error)
+  // Exit to let PM2 restart with clean state
+  process.exit(1)
+})
+
+// Check if worker is enabled
+if (process.env.BULLMQ_STATUS_ENABLED !== 'true') {
+  console.log('[Status Worker] Disabled (BULLMQ_STATUS_ENABLED != true)')
+  process.exit(0)
+}
+
+// Schedule initial job if queue is empty (wrapped in async IIFE)
+;(async () => {
+  const delayedCount = await statusQueue.getDelayedCount()
+  if (delayedCount === 0) {
+    await statusQueue.add(
+      'device-status',
+      {
+        type: 'scheduled',
+        runId: crypto.randomUUID(),
+        startedAt: Date.now(),
+      },
+      { delay: STATUS_INTERVAL }
+    )
+    console.log('[Status] Initial job scheduled')
+  }
+})().catch(console.error)
+
+const worker = new Worker(
+  statusQueue.name,
+  async (job) => {
+    return withJobLogging(job, async () => {
+      const result = await handleStatusJob(job.data)
+
+      // Schedule next run for scheduled jobs (regardless of success/failure)
+      if (job.data.type === 'scheduled') {
+        // Use longer delay on failure to prevent rapid retry loops
+        const delay = result.success ? STATUS_INTERVAL : ERROR_RETRY_DELAY
+        await statusQueue.add(
+          'device-status',
+          {
+            type: 'scheduled',
+            runId: crypto.randomUUID(),
+            startedAt: Date.now(),
+          },
+          { delay }
+        )
+      }
+
+      return result
+    })
+  },
+  {
+    connection: getRedis(),
+    concurrency: getWorkerConcurrency('device-status', 1),
+  }
+)
+
+worker.on('completed', (job) => {
+  console.log(`[Status] Job ${job.id} completed`)
+})
+
+worker.on('failed', (job, err) => {
+  console.error(`[Status] Job ${job?.id} failed:`, err.message)
+})
+
+worker.on('error', (error) => {
+  console.error('[Status] Worker error:', error.message)
+  // Continue processing other jobs
+})
+
+// Graceful shutdown
+const shutdown = async () => {
+  console.log('[Status] Shutting down worker...')
+  await worker.close()
+  process.exit(0)
+}
+
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)
+
+console.log('[Status] Worker started')
+
+export { worker }
