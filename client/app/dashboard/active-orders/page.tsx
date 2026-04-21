@@ -85,8 +85,6 @@ export default function ActiveOrdersPageWithTRPC() {
   // Stats - only count active orders (waiting for OTP)
   const totalOrders = activeOrdersList.length
   const activeOrders = activeOrdersList.filter((o: any) => o.active).length
-  const completedOrders = 0  // Completed orders don't appear on this page
-  const expiredOrders = 0    // Expired orders don't appear on this page
 
   const getStatusBadge = (order: Order) => {
     // If OTP has been received, it's completed
@@ -120,7 +118,7 @@ export default function ActiveOrdersPageWithTRPC() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
@@ -135,22 +133,6 @@ export default function ActiveOrdersPageWithTRPC() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">{activeOrders}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-green-600">Completed</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{completedOrders}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-red-600">Expired</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{expiredOrders}</div>
           </CardContent>
         </Card>
       </div>
