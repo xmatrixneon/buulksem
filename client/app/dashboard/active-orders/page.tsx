@@ -49,14 +49,13 @@ export default function ActiveOrdersPageWithTRPC() {
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 20
 
-  // tRPC query for fetching active orders
+  // tRPC query for fetching orders (all orders for proper stats)
   const {
     data: orders = [],
     isLoading,
     refetch,
   } = useQuery({
     ...trpc.orders.list.queryOptions({
-      active: true,
       limit: 100,
       offset: 0,
     }),
