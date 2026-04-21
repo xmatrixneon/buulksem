@@ -10,7 +10,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "workers": "ts-node src/workers/index.ts",
+    "workers": "ts-node --require dotenv/config src/workers/index.ts",
     "workers:prod": "node dist/workers/index.js",
     "prisma:generate": "prisma generate"
   },
