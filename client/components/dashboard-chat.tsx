@@ -67,7 +67,10 @@ export function ActivationActionChart() {
             config={{
               activation: {
                 label: "Orders",
-                color: "hsl(var(--chart-1))",
+                theme: {
+                  light: "oklch(0.5583 0.1276 42.9956)",
+                  dark: "oklch(0.5583 0.1276 42.9956)",
+                },
               },
             }}
             className="h-[300px] w-full"
