@@ -13,6 +13,7 @@
  * - SMS_AUTO_SUSPEND_ENABLED=false/true (inverted logic)
  */
 
+import "dotenv/config"
 import { worker as wakeupWorker } from './wakeup-worker'
 import { worker as statusWorker } from './status-worker'
 import { worker as cleanupWorker } from './cleanup-worker'
