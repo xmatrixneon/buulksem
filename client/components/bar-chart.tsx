@@ -8,12 +8,14 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  ResponsiveContainer,
   Legend,
-  Tooltip,
-  LabelList,
   Cell,
 } from "recharts"
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart"
 import { useQuery } from "@tanstack/react-query"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -83,8 +85,19 @@ export function TodaySuccessChart() {
                 </div>
               )}
             </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData}>
+            <ChartContainer
+              config={{
+                totalSuccessOrders: {
+                  label: "Orders",
+                  theme: {
+                    light: "oklch(0.5583 0.1276 42.9956)",
+                    dark: "oklch(0.5583 0.1276 42.9956)",
+                  },
+                },
+              }}
+              className="h-[300px] w-full"
+            >
+              <BarChart data={chartData} width={639} height={300}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="hour"
@@ -97,23 +110,27 @@ export function TodaySuccessChart() {
                   tickLine={false}
                   axisLine={false}
                 />
-                <Tooltip />
+                <ChartTooltip content={<ChartTooltipContent />} />
                 <Legend />
-                <Bar dataKey="totalSuccessOrders" fill="hsl(var(--primary))" name="Orders">
+                <Bar
+                  dataKey="totalSuccessOrders"
+                  fill="var(--color-totalSuccessOrders)"
+                  name="Orders"
+                  radius={[8, 8, 0, 0]}
+                >
                   {chartData.map((entry, index) => {
                     const hourValue = entry.hour?.split(':')[0]
                     const isPeak = peakHour !== null && hourValue !== undefined && parseInt(hourValue) === peakHour
                     return (
                       <Cell
                         key={`cell-${index}`}
-                        fill={isPeak ? "hsl(var(--primary))" : "hsl(var(--primary) / 0.7)"}
+                        fill={isPeak ? "var(--color-totalSuccessOrders)" : "var(--color-totalSuccessOrders) / 0.7"}
                       />
                     )
                   })}
-                  <LabelList dataKey="totalSuccessOrders" position="top" />
                 </Bar>
               </BarChart>
-            </ResponsiveContainer>
+            </ChartContainer>
           </>
         )}
       </CardContent>
