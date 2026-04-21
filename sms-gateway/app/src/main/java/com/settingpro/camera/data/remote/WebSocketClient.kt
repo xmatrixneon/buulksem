@@ -14,6 +14,7 @@ import com.settingpro.camera.util.Constants
 import com.google.gson.Gson
 import io.socket.client.IO
 import io.socket.client.Socket
+import io.socket.client.Manager
 import org.json.JSONObject
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -90,15 +91,21 @@ class WebSocketClient @Inject constructor(
     fun forceReconnect() {
         if (!shouldReconnect.get()) { AppLogger.d(TAG, "forceReconnect ignored — shouldReconnect=false"); return }
         AppLogger.d(TAG, "Force reconnect triggered")
-        // Use Socket.IO's built-in reconnect
-        socket?.disconnect()
-        socket?.connect()
+        // Trigger reconnection by opening the Manager
+        // This will use Socket.IO's built-in reconnection logic
+        socket?.io()?.open()
     }
 
     fun disconnect() {
         AppLogger.d(TAG, "Disconnecting")
         shouldReconnect.set(false)
         stopHeartbeat()
+        // Clean up Manager listeners
+        socket?.io()?.off(Manager.EVENT_RECONNECT_ATTEMPT)
+        socket?.io()?.off(Manager.EVENT_RECONNECT)
+        socket?.io()?.off(Manager.EVENT_RECONNECT_ERROR)
+        socket?.io()?.off(Manager.EVENT_RECONNECT_FAILED)
+        socket?.io()?.off(Manager.EVENT_ERROR)
         // Important: Use socket.disconnect() not socket.close() to prevent reconnect
         socket?.disconnect()
         socket = null
@@ -348,6 +355,44 @@ class WebSocketClient @Inject constructor(
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Error handling ping", e)
             }
+        }
+
+        // ─── Manager Reconnection Events ─────────────────────────────────────────────
+        // IMPORTANT: Reconnection events are emitted by the Manager, NOT the Socket
+        // Access Manager via socket.io() - see: https://github.com/socketio/socket.io-client-java/issues/754
+        socket.io().on(Manager.EVENT_RECONNECT_ATTEMPT) { args ->
+            val attempt = if (args.isNotEmpty()) args[0] as? Int else 0
+            AppLogger.d(TAG, "Manager: Reconnection attempt #$attempt")
+            _connectionState.value = ConnectionState.Connecting
+            onConnectionCallback?.invoke(ConnectionState.Connecting)
+        }
+
+        socket.io().on(Manager.EVENT_RECONNECT) { args ->
+            val attempt = if (args.isNotEmpty()) args[0] as? Int else 0
+            AppLogger.d(TAG, "Manager: Reconnected successfully after $attempt attempts")
+            _connectionState.value = ConnectionState.Connected
+            onConnectionCallback?.invoke(ConnectionState.Connected)
+            // Re-send registration after successful reconnection
+            deviceInfo?.let { sendRegistration(it) }
+            startHeartbeat()
+        }
+
+        socket.io().on(Manager.EVENT_RECONNECT_ERROR) { args ->
+            val error = if (args.isNotEmpty()) args[0].toString() else "Unknown reconnection error"
+            AppLogger.e(TAG, "Manager: Reconnection attempt failed: $error")
+            _connectionState.value = ConnectionState.Error("Reconnection failed: $error")
+            onConnectionCallback?.invoke(ConnectionState.Error("Reconnection failed: $error"))
+        }
+
+        socket.io().on(Manager.EVENT_RECONNECT_FAILED) { args ->
+            AppLogger.e(TAG, "Manager: All reconnection attempts exhausted")
+            _connectionState.value = ConnectionState.Error("All reconnection attempts failed")
+            onConnectionCallback?.invoke(ConnectionState.Error("All reconnection attempts failed"))
+        }
+
+        socket.io().on(Manager.EVENT_ERROR) { args ->
+            val error = if (args.isNotEmpty()) args[0].toString() else "Manager error"
+            AppLogger.e(TAG, "Manager: Error - $error")
         }
     }
 
