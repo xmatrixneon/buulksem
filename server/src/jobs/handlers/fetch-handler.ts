@@ -194,6 +194,17 @@ export async function handleFetchJob(_data: any): Promise<FetchJobResult> {
     console.log(`[Fetch] Found ${activeOrders.length} active orders`)
 
     if (activeOrders.length === 0) {
+      // Update cron even when no orders to process
+      try {
+        await prisma.cron.upsert({
+          where: { name: 'fetchOrders' },
+          create: { name: 'fetchOrders', lastRun: new Date() },
+          update: { lastRun: new Date() }
+        })
+        console.log('[Fetch] Cron updated (no active orders)')
+      } catch (cronErr) {
+        console.error('[Fetch] Failed to update CronStatus:', cronErr)
+      }
       return { success: true, processed: 0, errors: 0, otpsFound: 0, expired: 0, locksCreated: 0, duration: 0 }
     }
 
