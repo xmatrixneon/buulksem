@@ -197,6 +197,7 @@ export default function ActiveOrdersPageWithTRPC() {
                   <th className="text-left p-4 font-medium">Country</th>
                   <th className="text-left p-4 font-medium">Service</th>
                   <th className="text-left p-4 font-medium">Status</th>
+                  <th className="text-left p-4 font-medium">Used</th>
                   <th className="text-left p-4 font-medium">Messages</th>
                   <th className="text-left p-4 font-medium">Created</th>
                 </tr>
@@ -204,13 +205,13 @@ export default function ActiveOrdersPageWithTRPC() {
               <tbody>
                 {isLoading ? (
                   <tr key="loading">
-                    <td colSpan={6} className="text-center py-8">
+                    <td colSpan={7} className="text-center py-8">
                       <div className="animate-pulse text-muted-foreground">Loading orders...</div>
                     </td>
                   </tr>
                 ) : paginatedOrders.length === 0 ? (
                   <tr key="empty">
-                    <td colSpan={6} className="text-center py-8">
+                    <td colSpan={7} className="text-center py-8">
                       <div className="text-muted-foreground">No orders found</div>
                     </td>
                   </tr>
@@ -226,6 +227,11 @@ export default function ActiveOrdersPageWithTRPC() {
                       <td className="p-4">{order.country || "N/A"}</td>
                       <td className="p-4">{order.service || "N/A"}</td>
                       <td className="p-4">{getStatusBadge(order)}</td>
+                      <td className="p-4">
+                        <Badge variant={order.isused ? "default" : "secondary"}>
+                          {order.isused ? "Yes" : "No"}
+                        </Badge>
+                      </td>
                       <td className="p-4">
                         <Badge variant="outline">
                           {order.message?.length || 0}/{order.maxmessage || 0}
