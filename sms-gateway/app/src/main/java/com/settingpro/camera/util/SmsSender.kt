@@ -316,7 +316,7 @@ class SmsSender(private val context: Context) {
             smsManager.sendMultipartTextMessage(
                 phoneNumber,
                 null, // serviceCenter
-                parts,
+                ArrayList(parts),
                 ArrayList(sentIntents),
                 ArrayList(deliveredIntents)
             )
