@@ -6,7 +6,7 @@ import { prisma } from '../src/db/prisma'
 
 async function testGetStatus() {
   try {
-    const orderId = '69e749a52368bb86692c7437'
+    const orderId = '69e7500e93a3bbc1351b777d'
     console.log('[getStatus] Testing getsms API...\n')
     console.log(`[getStatus] Input parameters:`)
     console.log(`  api_key: test-key-123`)
