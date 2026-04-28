@@ -71,8 +71,8 @@ async function selectDevice(
     })
   }
 
-  // Get connected devices
-  const connectedDevices = socketManager.getConnectedDevices()
+  // Get connected devices (cluster-aware)
+  const connectedDevices = await socketManager.getOnlineDevices()
 
   // Filter devices by device pool if provided, otherwise use all connected devices
   const availableDevices = devicePool
@@ -182,25 +182,40 @@ async function calculateCampaignStats(campaignId: string) {
 export async function createCampaign({ input, ctx }: { input: any; ctx: any }) {
   const socketManager = getSocketManager()
   if (!socketManager) {
+    console.error('[BulkSMS] Socket manager not available')
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Socket manager not available',
     })
   }
 
+  // Use cluster-aware method to get all online devices
+  const connectedDevices = await socketManager.getOnlineDevices()
+  console.log(`[BulkSMS] Creating campaign "${input.name}"`)
+  console.log(`[BulkSMS] Online devices (cluster-aware): ${connectedDevices.length > 0 ? connectedDevices.join(', ') : 'NONE'}`)
+  console.log(`[BulkSMS] Requested device pool: ${input.devicePool?.length || 0} devices`)
+
   // Validate device pool if provided
   if (input.devicePool && input.devicePool.length > 0) {
-    const connectedDevices = socketManager.getConnectedDevices()
     const availableDevices = input.devicePool.filter((d: string) =>
       connectedDevices.includes(d)
     )
 
+    console.log(`[BulkSMS] Available devices in pool: ${availableDevices.length > 0 ? availableDevices.join(', ') : 'NONE'}`)
+
     if (availableDevices.length === 0) {
+      console.error(`[BulkSMS] No online devices in pool. Requested: [${input.devicePool.join(', ')}], Online: [${connectedDevices.join(', ') || 'NONE'}]`)
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
-        message: 'No connected devices found in device pool',
+        message: `No connected devices found in device pool. ${connectedDevices.length > 0 ? `Online devices: ${connectedDevices.join(', ')}` : 'No devices are currently online.'}`,
       })
     }
+  } else if (connectedDevices.length === 0) {
+    console.error('[BulkSMS] No devices online and no device pool specified')
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'No devices are currently online. Please connect at least one device.',
+    })
   }
 
   // Create campaign
@@ -482,19 +497,20 @@ async function processCampaign(campaignId: string) {
     // STEP 1: Distribute messages across devices using round-robin assignment
     // This ensures even distribution before parallel processing
     const deviceAssignments: Map<string, Array<typeof messages[0]>> = new Map()
-    const socketDevices = socketManager.getConnectedDevices()
+    const socketDevices = await socketManager.getOnlineDevices()
     const availableDevices = devicePool
       ? socketDevices.filter((d) => devicePool.includes(d))
       : socketDevices
 
     if (availableDevices.length === 0) {
+      console.error(`[Campaign ${campaignId}] No devices available. Device pool: [${devicePool?.join(', ') || 'ALL'}], Online: [${socketDevices.join(', ') || 'NONE'}]`)
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message: 'No devices available for campaign',
       })
     }
 
-    console.log(`[Campaign ${campaignId}] Distributing ${messages.length} messages across ${availableDevices.length} devices`)
+    console.log(`[Campaign ${campaignId}] Distributing ${messages.length} messages across ${availableDevices.length} devices: ${availableDevices.join(', ')}`)
 
     // Distribute messages round-robin across devices
     messages.forEach((message, index) => {

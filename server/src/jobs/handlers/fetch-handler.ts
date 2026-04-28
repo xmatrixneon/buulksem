@@ -64,7 +64,7 @@ function buildSmartOtpRegexList(formats: any[]): RegExp[] {
       let pattern = escapeRegex(format)
       let isFirstOtp = true
 
-      // Handle {otp4}, {otp5}, {otp6}, {otp7}, {otp8} — any fixed-length variant
+      // OTP FIX - Fixed-length OTP
       const fixedOtpMatch = format.match(/\{otp(\d+)\}/)
       if (fixedOtpMatch) {
         const length = parseInt(fixedOtpMatch[1], 10)
@@ -76,26 +76,34 @@ function buildSmartOtpRegexList(formats: any[]): RegExp[] {
           return `(?:\\b\\d{${length}}\\b)`
         })
       } else {
-        // Handle {otp} — 3–12 alphanumeric chars
+        // OTP FIX - Stronger regex for OTP and voucher codes
         pattern = pattern.replace(/\\\{otp\\\}/gi, () => {
           if (isFirstOtp) {
             isFirstOtp = false
-            return '(?<otp>[A-Za-z0-9\\-]{3,12})'
+            return '(?<otp>\\d{4,8}|[A-Za-z0-9\\-]{6,25})'
           }
-          return '(?:[A-Za-z0-9\\-]{3,12})'
+          return '(?:\\d{4,8}|[A-Za-z0-9\\-]{6,25})'
         })
       }
 
+      // Placeholders - FIX random vs any
       pattern = pattern.replace(/\\\{date\\\}/gi, '.*?')
-      pattern = pattern.replace(/\\\{datetime\\\}/gi, '.*?')
       pattern = pattern.replace(/\\\{time\\\}/gi, '.*?')
-      pattern = pattern.replace(/\\\{random\\\}/gi, '.+?')
+      pattern = pattern.replace(/\\\{datetime\\\}/gi, '.*?')
+      pattern = pattern.replace(/\\\{random\\\}/gi, '[A-Za-z0-9]{3,15}')
+      pattern = pattern.replace(/\\\{any\\\}/gi, '.*?')
       pattern = pattern.replace(/\\\{.*?\\\}/gi, '.*?')
 
+      // Spacing + punctuation - FIX dot
       pattern = pattern
         .replace(/\\s+/g, '\\s*')
         .replace(/\\:/g, '[:：]?')
-        .replace(/\\\./g, '.*?')
+        .replace(/\\\./g, '\\.?') // FIXED: was .*?
+
+      // Bracket support - NEW
+      pattern = pattern
+        .replace(/\\\(/g, '[\\(\\[\\{【]?')
+        .replace(/\\\)/g, '[\\)\\]\\}】]?')
 
       return new RegExp(pattern, 'i')
     })

@@ -40,6 +40,48 @@ export const appRouter = router({
       }
     }),
 
+  // Get current user's API key (protected)
+  getApiKey: protectedProcedure
+    .query(async ({ ctx }) => {
+      if (!ctx.session?.user?.id) {
+        throw new Error('User not authenticated')
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: ctx.session.user.id },
+        select: { apiKey: true }
+      })
+
+      return { apiKey: user?.apiKey || null }
+    }),
+
+  // Regenerate API key (protected)
+  regenerateApiKey: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      if (!ctx.session?.user?.id) {
+        throw new Error('User not authenticated')
+      }
+
+      const { generateApiKeyForUser } = await import('../lib/api-key')
+      const newApiKey = await generateApiKeyForUser(ctx.session.user.id)
+
+      return { apiKey: newApiKey }
+    }),
+
+  // Validate API key (for testing/admin - can be made protected if needed)
+  validateApiKey: publicProcedure
+    .input(z.object({ apiKey: z.string() }))
+    .query(async ({ input }) => {
+      const { validateApiKey } = await import('../lib/api-key')
+      const result = await validateApiKey(input.apiKey)
+
+      return {
+        valid: result.valid,
+        userId: result.user?.id || null,
+        email: result.user?.email || null
+      }
+    }),
+
   // ============================================
   // DEVICE MANAGEMENT
   // ============================================
@@ -52,22 +94,54 @@ export const appRouter = router({
       }).optional())
       .query(async ({ input }) => {
         const params = input || { status: 'all' as const, limit: 50, offset: 0 }
-        const where = params.status !== 'all' ? { status: params.status } : {}
 
-        return await prisma.device.findMany({
-          where,
+        // Get all devices first (we'll filter by actual online status after)
+        const allDevices = await prisma.device.findMany({
           take: params.limit ?? 50,
           skip: params.offset ?? 0,
           orderBy: { lastHeartbeat: 'desc' }
         })
+
+        // Calculate real online status based on lastSeen (2 minutes threshold)
+        const ONLINE_THRESHOLD_MS = 120000 // 2 minutes
+        const now = Date.now()
+
+        const devicesWithRealStatus = allDevices.map(device => {
+          const lastSeen = new Date(device.lastSeen).getTime()
+          const isActuallyOnline = (now - lastSeen) < ONLINE_THRESHOLD_MS
+          return {
+            ...device,
+            status: isActuallyOnline ? 'online' : 'offline',
+            isActuallyOnline
+          }
+        })
+
+        // Filter by requested status based on REAL online status
+        if (params.status !== 'all') {
+          return devicesWithRealStatus.filter(d => d.isActuallyOnline === (params.status === 'online'))
+        }
+
+        return devicesWithRealStatus
       }),
 
     getById: publicProcedure
       .input(z.object({ deviceId: z.string() }))
       .query(async ({ input }) => {
-        return await prisma.device.findUnique({
+        const device = await prisma.device.findUnique({
           where: { deviceId: input.deviceId }
         })
+
+        if (!device) return null
+
+        // Calculate real online status based on lastSeen (2 minutes threshold)
+        const ONLINE_THRESHOLD_MS = 120000 // 2 minutes
+        const lastSeen = new Date(device.lastSeen).getTime()
+        const isActuallyOnline = (Date.now() - lastSeen) < ONLINE_THRESHOLD_MS
+
+        return {
+          ...device,
+          status: isActuallyOnline ? 'online' : 'offline'
+        }
       }),
 
     sendSms: publicProcedure
@@ -903,7 +977,7 @@ export const appRouter = router({
       const istDate = new Date(now.getTime() + (5.5 * 60 * 60 * 1000))
 
       // Get basic stats
-      const [totalNumbers, activeNumbers, suspendedNumbers, todayOrders, totalDevices, activeDevices] = await Promise.all([
+      const [totalNumbers, activeNumbers, suspendedNumbers, todayOrders, totalDevices, allDevices] = await Promise.all([
         prisma.numbers.count(),
         prisma.numbers.count({ where: { active: true, suspended: false } }),
         prisma.numbers.count({ where: { suspended: true } }),
@@ -915,8 +989,16 @@ export const appRouter = router({
           }
         }),
         prisma.device.count(),
-        prisma.device.count({ where: { status: 'online' } })
+        prisma.device.findMany({ select: { deviceId: true, lastSeen: true, status: true } })
       ])
+
+      // Calculate actually online devices (lastSeen within 2 minutes)
+      const ONLINE_THRESHOLD_MS = 120000 // 2 minutes
+      const currentTime = Date.now()
+      const activeDevices = allDevices.filter(d => {
+        const lastSeen = new Date(d.lastSeen).getTime()
+        return (currentTime - lastSeen) < ONLINE_THRESHOLD_MS
+      }).length
 
       // Get cron status - both device sync and OTP fetch times
       const [syncCron, fetchCron] = await Promise.all([
@@ -1256,44 +1338,8 @@ export const appRouter = router({
         smsText: z.string().min(1)
       }))
       .query(async ({ input }) => {
-        const { smsText } = input
-
-        // Extract OTP using common patterns
-        const otpPatterns = [
-          /\b\d{4,8}\b/g, // 4-8 digit number
-          /(?:otp|code|password|pass|pin|verification|is)\s*:?\s*\d{4,8}/gi, // "OTP: 123456"
-          /(?:your|the)\s+(?:otp|code|password|pin|verification)\s+(?:is\s+)?\d{4,8}/gi // "Your OTP is 123456"
-        ]
-
-        let otp = null
-        let template = smsText
-
-        // Try to find OTP
-        for (const pattern of otpPatterns) {
-          const match = smsText.match(pattern)
-          if (match) {
-            // Extract the actual digits
-            const digits = match[0].match(/\d{4,8}/)
-            if (digits) {
-              otp = digits[0]
-              break
-            }
-          }
-        }
-
-        // Generate template by replacing OTP with placeholders
-        if (otp) {
-          template = smsText.replace(new RegExp(`\\b${otp}\\b`, 'g'), '{otp}')
-          template = template.replace(/\b\d{1,3}\b/g, '') // Remove standalone numbers
-          template = template.replace(/\s+/g, ' ').trim() // Clean up whitespace
-        }
-
-        return {
-          success: true,
-          template: template || smsText,
-          otp: otp,
-          message: otp ? 'OTP found and template generated' : 'No OTP found in message'
-        }
+        const { generateSmsTemplate } = await import('../lib/deepseek')
+        return generateSmsTemplate(input.smsText)
       })
   })
 })

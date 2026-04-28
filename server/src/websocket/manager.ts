@@ -1,5 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io'
 import { Server as HTTPServer } from 'http'
+import { createAdapter } from '@socket.io/redis-adapter'
+import Redis from 'ioredis'
 import { prisma } from '../db/prisma'
 import { randomUUID } from 'crypto'
 import {
@@ -54,8 +56,30 @@ export class SocketIOManager {
         origin: '*',
         methods: ['GET', 'POST']
       },
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      pingTimeout: 30000,
+      pingInterval: 10000,
+      maxHttpBufferSize: 1e6,
+      allowUpgrades: true
     })
+
+    // Enable Redis adapter for PM2 cluster scaling
+    try {
+      const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379'
+      const pubClient = new Redis(redisUrl, {
+        maxRetriesPerRequest: null,
+        lazyConnect: false,
+        retryStrategy: (times) => {
+          const delay = Math.min(times * 50, 2000)
+          return delay
+        }
+      })
+      const subClient = pubClient.duplicate()
+      this.io.adapter(createAdapter(pubClient, subClient))
+      console.log('[SocketIO] Redis adapter enabled for cluster scaling')
+    } catch (err) {
+      console.error('[SocketIO] Failed to enable Redis adapter:', err)
+    }
 
     this.setupHandlers()
 
@@ -121,22 +145,28 @@ export class SocketIOManager {
         }
 
         // Close existing connection for this device if any (prevent multiple connections)
+        // With Redis adapter, we need to broadcast to ALL instances
         const existingSocketId = this.deviceConnections.get(regDeviceId)
         if (existingSocketId && existingSocketId !== socket.id) {
           console.log(`[SocketIO] Replacing existing connection for device: ${regDeviceId}, old socket: ${existingSocketId}, new socket: ${socket.id}`)
-          // Find and close the old socket
+
+          // First, try local disconnect (old socket might be on this instance)
           const oldSocket = this.io.sockets.sockets.get(existingSocketId)
           if (oldSocket) {
-            console.log(`[SocketIO] Old socket found, disconnecting...`)
-            oldSocket.emit('disconnected', { reason: 'New connection established' })
-            // Force disconnect - close the underlying connection
+            console.log(`[SocketIO] Old socket found locally, disconnecting...`)
+            oldSocket.emit('force_disconnect', { reason: 'New connection established from same instance' })
             oldSocket.disconnect(true)
-            // Also force close the socket connection
-            oldSocket.conn.close()
-            console.log(`[SocketIO] Closed old connection for device ${regDeviceId}`)
-          } else {
-            console.log(`[SocketIO] Old socket not found in sockets Map (already disconnected?)`)
+            console.log(`[SocketIO] Closed local old connection for device ${regDeviceId}`)
           }
+
+          // Then broadcast to ALL instances via Redis adapter room
+          // This tells any other instance that has this device to disconnect it
+          this.io.to(`device:${regDeviceId}`).emit('force_disconnect', {
+            reason: 'New connection established',
+            newSocketId: socket.id,
+            timestamp: Date.now()
+          })
+          console.log(`[SocketIO] Broadcast force_disconnect to device:${regDeviceId} room (all instances)`)
         }
 
         // Track device connection (replace old connection)
@@ -193,6 +223,10 @@ export class SocketIOManager {
         console.log(`[SocketIO] Active device connections: ${this.deviceConnections.size}`)
         console.log(`[SocketIO] Device registered successfully: ${regDeviceId}`)
 
+        // Join device room for cluster-wide messaging with Redis adapter
+        socket.join(`device:${regDeviceId}`)
+        console.log(`[SocketIO] Device ${regDeviceId} joined room device:${regDeviceId}`)
+
         // Send acknowledgment
         socket.emit('registered', { success: true, deviceId: regDeviceId })
 
@@ -213,6 +247,12 @@ export class SocketIOManager {
         })
         socket.emit('error', { message: 'Registration failed', error: error instanceof Error ? error.message : 'Unknown error' })
       }
+    })
+
+    // Force disconnect handler - when device reconnects from another instance
+    socket.on('force_disconnect', (data: any) => {
+      console.log(`[SocketIO] Device ${socket.data?.registeredDeviceId || socket.id} received force_disconnect:`, data)
+      socket.disconnect(true)
     })
 
     // Heartbeat handler
@@ -607,7 +647,9 @@ export class SocketIOManager {
     socket.data = socket.data || {}
     socket.data.isDashboard = true
 
-    console.log(`[SocketIO] Dashboard client connected: ${socket.id}`)
+    // Join dashboard room for cluster-wide broadcasts
+    socket.join('dashboard')
+    console.log(`[SocketIO] Dashboard client connected: ${socket.id} (joined room: dashboard)`)
 
     // Send current device status to new dashboard client
     this.sendDeviceStatus(socket)
@@ -648,9 +690,8 @@ export class SocketIOManager {
   }
 
   private broadcastToDashboard(event: string, data: any) {
-    this.dashboardClients.forEach((socketId) => {
-      this.io.to(socketId).emit(event, data)
-    })
+    // Use room-based messaging for cluster-wide dashboard broadcasts
+    this.io.to('dashboard').emit(event, data)
   }
 
   private async sendDeviceStatus(socket: any) {
@@ -731,18 +772,46 @@ export class SocketIOManager {
 
   /**
    * Send command to device without waiting for response (fire and forget)
+   * Uses Redis adapter rooms for cluster-wide delivery
    */
   sendToDevice(deviceId: string, event: string, data: any): boolean {
-    const socketId = this.deviceConnections.get(deviceId)
-    if (socketId) {
-      this.io.to(socketId).emit(event, data)
-      return true
-    }
-    return false
+    // Use room-based messaging with Redis adapter for cluster support
+    // All devices join room "device:{deviceId}" on registration
+    this.io.to(`device:${deviceId}`).emit(event, data)
+    console.log(`[SocketIO] Sent ${event} to device:${deviceId} (room-based)`)
+    return true
   }
 
   getConnectedDevices(): string[] {
+    // In cluster mode with Redis adapter, get devices from database
+    // The deviceConnections map only contains local connections
+    // For cluster compatibility, we need to query the database
     return Array.from(this.deviceConnections.keys())
+  }
+
+  // New method: Get all online devices from database (cluster-aware)
+  async getOnlineDevices(): Promise<string[]> {
+    try {
+      // Get devices that were seen in the last 2 minutes (120 seconds)
+      // This accounts for: 30s heartbeat interval + network delays
+      const threshold = new Date(Date.now() - 120000)
+
+      const onlineDevices = await prisma.device.findMany({
+        where: {
+          status: 'online',
+          lastSeen: { gte: threshold }
+        },
+        select: { deviceId: true }
+      })
+
+      const deviceIds = onlineDevices.map(d => d.deviceId)
+      console.log(`[SocketIO] Online devices from DB: ${deviceIds.length > 0 ? deviceIds.join(', ') : 'NONE'}`)
+      return deviceIds
+    } catch (error) {
+      console.error('[SocketIO] Error fetching online devices from DB:', error)
+      // Fallback to local connections
+      return Array.from(this.deviceConnections.keys())
+    }
   }
 
   isDeviceConnected(deviceId: string): boolean {

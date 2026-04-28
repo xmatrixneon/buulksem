@@ -3,23 +3,29 @@ module.exports = {
     {
       name: 'sms-gateway',
       script: 'dist/server.js',
-      instances: 1,
-      exec_mode: 'fork',
+      instances: 8,
+      exec_mode: 'cluster',
       env: {
         NODE_ENV: 'production',
-        PORT: 3000
+        PORT: 4000
       },
       error_file: './logs/app-error.log',
       out_file: './logs/app-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
-      merge_logs: true
+      merge_logs: true,
+      max_memory_restart: '2G',
+      node_args: '--max-old-space-size=4096',
+      inspect: false,
+      watch: false
     },
     {
       name: 'worker:status',
       script: 'dist/workers/status-worker.js',
+      instances: 2,
+      exec_mode: 'cluster',
       env: {
         BULLMQ_STATUS_ENABLED: 'true',
-        BULLMQ_CONCURRENCY_DEVICE_STATUS: '3'
+        BULLMQ_CONCURRENCY_DEVICE_STATUS: '2'
       },
       error_file: './logs/status-error.log',
       out_file: './logs/status-out.log'
@@ -27,12 +33,35 @@ module.exports = {
     {
       name: 'worker:fetch',
       script: 'dist/workers/fetch-worker.js',
+      instances: 2,
+      exec_mode: 'cluster',
       env: {
         BULLMQ_FETCH_ENABLED: 'true',
-        BULLMQ_CONCURRENCY_SMS_FETCH: '5'
+        BULLMQ_CONCURRENCY_SMS_FETCH: '2'
       },
       error_file: './logs/fetch-error.log',
       out_file: './logs/fetch-out.log'
+    },
+    {
+      name: 'worker:keepalive',
+      script: 'dist/workers/keepalive-worker.js',
+      env: {
+        BULLMQ_KEEPALIVE_ENABLED: 'true'
+      },
+      error_file: './logs/keepalive-error.log',
+      out_file: './logs/keepalive-out.log'
+    },
+    {
+      name: 'worker:wakeup',
+      script: 'dist/workers/wakeup-worker.js',
+      instances: 2,
+      exec_mode: 'cluster',
+      env: {
+        BULLMQ_WAKEUP_ENABLED: 'true',
+        BULLMQ_CONCURRENCY_DEVICE_WAKEUP: '4'
+      },
+      error_file: './logs/wakeup-error.log',
+      out_file: './logs/wakeup-out.log'
     },
     {
       name: 'worker:suspend',

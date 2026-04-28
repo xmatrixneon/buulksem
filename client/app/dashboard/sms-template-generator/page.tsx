@@ -196,10 +196,12 @@ export default function SmsTemplateGenerator() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div className="space-y-2">
               <div className="font-semibold">Placeholders:</div>
-              <div><code className="bg-muted px-1 rounded">{"{otp}"}</code> → OTP digits/alphanumeric</div>
-              <div><code className="bg-muted px-1 rounded">{"{time}"}</code> → Durations, dates, times</div>
-              <div><code className="bg-muted px-1 rounded">{"{random}"}</code> → Purely alphanumeric strings</div>
-              <div><code className="bg-muted px-1 rounded">{"{any}"}</code> → Anything else (links, special chars)</div>
+              <div><code className="bg-muted px-1 rounded">{"{otp}"}</code> → OTP (3-12 alphanumeric)</div>
+              <div><code className="bg-muted px-1 rounded">{"{date}"}</code> → Date values (e.g., "28 Apr 2025")</div>
+              <div><code className="bg-muted px-1 rounded">{"{datetime}"}</code> → DateTime values</div>
+              <div><code className="bg-muted px-1 rounded">{"{time}"}</code> → Durations (e.g., "100 secs")</div>
+              <div><code className="bg-muted px-1 rounded">{"{random}"}</code> → Random strings</div>
+              <div><code className="bg-muted px-1 rounded">{"{any}"}</code> → URLs, links, etc.</div>
             </div>
             <div className="space-y-2">
               <div className="font-semibold">Rules:</div>
@@ -207,6 +209,7 @@ export default function SmsTemplateGenerator() {
               <div>• Spaces collapse into \s*</div>
               <div>• : matches : or ：</div>
               <div>• . matches .*</div>
+              <div>• AI-powered by DeepSeek</div>
             </div>
           </div>
         </CardContent>

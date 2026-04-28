@@ -17,6 +17,7 @@ import {
   Home,
   Smartphone,
   Activity,
+  Send,
 } from "lucide-react"
 
 import Link from "next/link"
@@ -85,6 +86,13 @@ export default function CustomSidebar() {
             { href: "/dashboard/sms-template-generator", icon: MessagesSquare, label: "SMS Template Generator" },
           ],
         },
+    {
+      title: "Account",
+      items: [
+        { href: "/dashboard/bulk-sms", icon: Send, label: "Bulk SMS" },
+        { href: "/dashboard/settings", icon: Settings, label: "Settings" },
+      ],
+    },
   ]
 
   return (

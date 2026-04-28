@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -13,9 +14,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Pencil, Trash2, Check, X, Zap, Search, RefreshCw, MessageSquare, Power, PowerOff, Layers, CheckCircle2, XCircle } from "lucide-react";
+import { Pencil, Trash2, Check, X, Zap, Search, RefreshCw, MessageSquare, Power, PowerOff, Layers, CheckCircle2, XCircle, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,11 +53,12 @@ interface Service {
 export default function ServicesPageWithTRPC() {
   const trpc = useTRPC();
 
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<Partial<Service>>({});
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editService, setEditService] = useState<Service | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [newFormatInput, setNewFormatInput] = useState("");
 
   // tRPC query for fetching services
   const {
@@ -81,8 +93,9 @@ export default function ServicesPageWithTRPC() {
       console.log('[Services] Edit mutation succeeded');
       toast.success("Service updated successfully");
       refetch();
-      setEditId(null);
-      setEditData({});
+      setEditDialogOpen(false);
+      setEditService(null);
+      setNewFormatInput("");
     },
     onError: (error: any) => {
       console.error('[Services] Edit mutation failed:', error);
@@ -90,39 +103,81 @@ export default function ServicesPageWithTRPC() {
     },
   });
 
-  const startEdit = (service: Service) => {
-    console.log('[Services] Starting edit for service:', service.id, service.name);
-    setEditId(service.id);
-    setEditData(service);
+  const openEditDialog = (service: Service) => {
+    console.log('[Services] Opening edit dialog for service:', service.id, service.name);
+    // Deep clone to avoid reference issues
+    setEditService({
+      id: service.id,
+      name: service.name,
+      code: service.code,
+      format: Array.isArray(service.format) ? [...service.format] : [],
+      image: service.image || "",
+      multisms: service.multisms,
+      maxmessage: service.maxmessage,
+      active: service.active,
+    });
+    setEditDialogOpen(true);
   };
 
-  const cancelEdit = () => {
-    console.log('[Services] Canceling edit');
-    setEditId(null);
-    setEditData({});
+  const closeEditDialog = () => {
+    console.log('[Services] Closing edit dialog');
+    setEditDialogOpen(false);
+    setEditService(null);
+    setNewFormatInput("");
   };
 
   const handleChange = (field: keyof Service, value: any) => {
     console.log('[Services] Changing field:', field, 'to:', value);
-    setEditData((prev) => ({ ...prev, [field]: value }));
+    setEditService((prev) => prev ? { ...prev, [field]: value } : null);
   };
 
-  const saveEdit = async (id: string) => {
-    console.log('[Services] Saving edit for service:', id);
-    if (!editData.name || !editData.code || !editData.image) {
+  const addFormat = () => {
+    if (!newFormatInput.trim()) {
+      toast.error("Please enter a format pattern");
+      return;
+    }
+    if (!editService) return;
+
+    setEditService({
+      ...editService,
+      format: [...(editService.format || []), newFormatInput.trim()]
+    });
+    setNewFormatInput("");
+    toast.success("Format added");
+  };
+
+  const removeFormat = (index: number) => {
+    if (!editService) return;
+    const newFormats = [...(editService.format || [])];
+    newFormats.splice(index, 1);
+    setEditService({
+      ...editService,
+      format: newFormats
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editService) return;
+    if (!editService.name || !editService.code) {
       toast.error("Please fill all required fields");
       return;
     }
+    if (!editService.format || editService.format.length === 0) {
+      toast.error("Please add at least one format pattern");
+      return;
+    }
+
+    console.log('[Services] Saving edit for service:', editService.id);
 
     await editMutation.mutateAsync({
-      id,
-      name: editData.name,
-      code: editData.code,
-      format: editData.format || [],
-      image: editData.image,
-      multisms: editData.multisms ?? true,
-      maxmessage: editData.maxmessage ?? 0,
-      active: editData.active ?? true,
+      id: editService.id,
+      name: editService.name,
+      code: editService.code,
+      format: editService.format,
+      image: editService.image || "",
+      multisms: editService.multisms ?? true,
+      maxmessage: editService.maxmessage ?? 0,
+      active: editService.active ?? true,
     });
   };
 
@@ -155,10 +210,18 @@ export default function ServicesPageWithTRPC() {
             Manage OTP services and their formats
           </p>
         </div>
-        <Button variant="outline" onClick={() => refetch()} disabled={isLoading} className="w-full sm:w-auto">
-          <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/dashboard/addservice">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Service
+            </Link>
+          </Button>
+          <Button variant="outline" onClick={() => refetch()} disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
@@ -182,8 +245,9 @@ export default function ServicesPageWithTRPC() {
                   <TableHead>Icon</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Code</TableHead>
+                  <TableHead>Format</TableHead>
                   <TableHead>Multi-SMS</TableHead>
-                  <TableHead>Max Messages</TableHead>
+                  <TableHead>Max Msgs</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -191,13 +255,13 @@ export default function ServicesPageWithTRPC() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
+                    <TableCell colSpan={8} className="text-center py-8">
                       <div className="animate-pulse text-muted-foreground">Loading services...</div>
                     </TableCell>
                   </TableRow>
                 ) : filteredServices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
+                    <TableCell colSpan={8} className="text-center py-8">
                       <div className="text-muted-foreground">No services found</div>
                     </TableCell>
                   </TableRow>
@@ -211,119 +275,49 @@ export default function ServicesPageWithTRPC() {
                           <MessageSquare className="h-4 w-4 text-muted-foreground" />
                         )}
                       </TableCell>
+                      <TableCell className="font-medium">{service.name}</TableCell>
                       <TableCell>
-                        {editId === service.id ? (
-                          <Input
-                            value={editData.name || ""}
-                            onChange={(e) => handleChange("name", e.target.value)}
-                            className="h-8"
-                          />
-                        ) : (
-                          service.name
-                        )}
+                        <Badge variant="outline">{service.code}</Badge>
                       </TableCell>
                       <TableCell>
-                        {editId === service.id ? (
-                          <Input
-                            value={editData.code || ""}
-                            onChange={(e) => handleChange("code", e.target.value)}
-                            className="h-8"
-                            placeholder="Service code"
-                          />
-                        ) : (
-                          <Badge variant="outline">{service.code}</Badge>
-                        )}
+                        <div className="text-xs text-muted-foreground max-w-md truncate">
+                          {service.format && Array.isArray(service.format) ? (
+                            <span>{service.format.length} format(s)</span>
+                          ) : (
+                            <span className="italic">No formats</span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
-                        {editId === service.id ? (
-                          <Button
-                            size="sm"
-                            variant={editData.multisms ? "default" : "secondary"}
-                            onClick={() => handleChange("multisms", !editData.multisms)}
-                            className="h-8 px-2"
-                          >
-                            {editData.multisms ? (
-                              <CheckCircle2 className="h-4 w-4" />
-                            ) : (
-                              <XCircle className="h-4 w-4" />
-                            )}
-                          </Button>
-                        ) : (
-                          <Badge variant={service.multisms ? "default" : "secondary"}>
-                            {service.multisms ? "Yes" : "No"}
-                          </Badge>
-                        )}
+                        <Badge variant={service.multisms ? "default" : "secondary"}>
+                          {service.multisms ? "Yes" : "No"}
+                        </Badge>
                       </TableCell>
                       <TableCell>
-                        {editId === service.id ? (
-                          <Input
-                            type="number"
-                            value={editData.maxmessage ?? 0}
-                            onChange={(e) => handleChange("maxmessage", parseInt(e.target.value) || 0)}
-                            className="h-8 w-20"
-                            min="0"
-                          />
-                        ) : (
-                          service.maxmessage || 0
-                        )}
+                        {service.maxmessage || 0}
                       </TableCell>
                       <TableCell>
-                        {editId === service.id ? (
-                          <Button
-                            size="sm"
-                            variant={editData.active ? "default" : "secondary"}
-                            onClick={() => handleChange("active", !editData.active)}
-                            className="h-8 px-2"
-                          >
-                            {editData.active ? (
-                              <Power className="h-4 w-4" />
-                            ) : (
-                              <PowerOff className="h-4 w-4" />
-                            )}
-                          </Button>
-                        ) : (
-                          <Badge variant={service.active ? "default" : "secondary"}>
-                            {service.active ? "Active" : "Inactive"}
-                          </Badge>
-                        )}
+                        <Badge variant={service.active ? "default" : "secondary"}>
+                          {service.active ? "Active" : "Inactive"}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        {editId === service.id ? (
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={cancelEdit}
-                              disabled={editMutation.isPending}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => saveEdit(service.id)}
-                              disabled={editMutation.isPending}
-                            >
-                              <Check className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => startEdit(service)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openDeleteDialog(service.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditDialog(service)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openDeleteDialog(service.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -333,6 +327,226 @@ export default function ServicesPageWithTRPC() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Service</DialogTitle>
+            <DialogDescription>
+              Update service information and OTP format patterns
+            </DialogDescription>
+          </DialogHeader>
+
+          {editService && (
+            <div className="space-y-6 py-4">
+              {/* Basic Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Service Name *</Label>
+                  <Input
+                    id="name"
+                    value={editService.name || ""}
+                    onChange={(e) => handleChange("name", e.target.value)}
+                    placeholder="Airtel"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="code">Service Code *</Label>
+                  <Input
+                    id="code"
+                    value={editService.code || ""}
+                    onChange={(e) => handleChange("code", e.target.value)}
+                    placeholder="airtel"
+                    className="lowercase"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="image">Image URL</Label>
+                <Input
+                  id="image"
+                  value={editService.image || ""}
+                  onChange={(e) => handleChange("image", e.target.value)}
+                  placeholder="https://example.com/icon.png"
+                />
+              </div>
+
+              {/* Settings */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="maxmessage">Max Messages</Label>
+                  <Input
+                    id="maxmessage"
+                    type="number"
+                    value={editService.maxmessage ?? 0}
+                    onChange={(e) => handleChange("maxmessage", parseInt(e.target.value) || 0)}
+                    min="0"
+                    placeholder="0"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Maximum OTP messages to accept
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Multi-SMS</Label>
+                  <Button
+                    type="button"
+                    variant={editService.multisms ? "default" : "secondary"}
+                    size="sm"
+                    onClick={() => handleChange("multisms", !editService.multisms)}
+                    className="w-full"
+                  >
+                    {editService.multisms ? (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                        Enabled
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="h-4 w-4 mr-2" />
+                        Disabled
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Accept multiple OTP messages
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Button
+                    type="button"
+                    variant={editService.active ? "default" : "secondary"}
+                    size="sm"
+                    onClick={() => handleChange("active", !editService.active)}
+                    className="w-full"
+                  >
+                    {editService.active ? (
+                      <>
+                        <Power className="h-4 w-4 mr-2" />
+                        Active
+                      </>
+                    ) : (
+                      <>
+                        <PowerOff className="h-4 w-4 mr-2" />
+                        Inactive
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Service availability status
+                  </p>
+                </div>
+              </div>
+
+              {/* Format Patterns */}
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>OTP Format Patterns *</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {editService.format?.length || 0} pattern(s)
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Define patterns to extract OTP from SMS. Use <code>{'{otp}'}</code> for the OTP code.
+                  </p>
+                </div>
+
+                {/* Add new format */}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="e.g., Your OTP is {otp}. Valid for {time} secs."
+                    value={newFormatInput}
+                    onChange={(e) => setNewFormatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addFormat()}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={addFormat}
+                    disabled={!newFormatInput.trim()}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add
+                  </Button>
+                </div>
+
+                {/* Format list */}
+                <div className="space-y-2">
+                  {editService.format && editService.format.length > 0 ? (
+                    editService.format.map((format: string, index: number) => (
+                      <div key={index} className="flex items-center gap-2 p-3 bg-muted rounded-md">
+                        <code className="flex-1 text-sm font-mono break-all">
+                          {format}
+                        </code>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeFormat(index)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-4 text-sm text-muted-foreground border rounded-md border-dashed">
+                      No format patterns. Add at least one pattern.
+                    </div>
+                  )}
+                </div>
+
+                {/* Format Examples */}
+                <div className="bg-muted/50 p-3 rounded-md">
+                  <p className="text-xs font-medium mb-2">Format Examples:</p>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <div><code>{'Your OTP is {otp} for Account'}</code> - Simple pattern</div>
+                    <div><code>{'Use {otp} to verify your login'}</code> - With context</div>
+                    <div><code>{'Code {otp}. Valid for 5 minutes'}</code> - Time-limited</div>
+                    <div><code>{'Your verification code is {otp}. Do not share.'}</code> - Security notice</div>
+                    <div><code>{'<#> {otp} is your OTP... Thanks'}</code> - With prefix</div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Tip: Be specific to improve OTP extraction accuracy
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={closeEditDialog}
+              disabled={editMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={saveEdit}
+              disabled={editMutation.isPending}
+            >
+              {editMutation.isPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
