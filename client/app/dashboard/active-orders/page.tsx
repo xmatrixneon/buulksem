@@ -62,8 +62,8 @@ export default function ActiveOrdersPageWithTRPC() {
     refetchOnWindowFocus: false,
   })
 
-  // Filter orders - ONLY show active orders (waiting for OTP)
-  const activeOrdersList = orders.filter((order: any) => !order.isused)  // Only waiting for OTP
+  // Filter orders - show all active orders (including multi-use orders waiting for more SMS)
+  const activeOrdersList = orders.filter((order: any) => order.active)  // All active orders
 
   const filteredOrders = activeOrdersList.filter((order: any) => {
     const matchesSearch =
