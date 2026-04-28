@@ -501,21 +501,6 @@ export default function ServicesPageWithTRPC() {
                     </div>
                   )}
                 </div>
-
-                {/* Format Examples */}
-                <div className="bg-muted/50 p-3 rounded-md">
-                  <p className="text-xs font-medium mb-2">Format Examples:</p>
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    <div><code>{'Your OTP is {otp} for Account'}</code> - Simple pattern</div>
-                    <div><code>{'Use {otp} to verify your login'}</code> - With context</div>
-                    <div><code>{'Code {otp}. Valid for 5 minutes'}</code> - Time-limited</div>
-                    <div><code>{'Your verification code is {otp}. Do not share.'}</code> - Security notice</div>
-                    <div><code>{'<#> {otp} is your OTP... Thanks'}</code> - With prefix</div>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Tip: Be specific to improve OTP extraction accuracy
-                  </p>
-                </div>
               </div>
             </div>
           )}
