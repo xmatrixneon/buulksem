@@ -319,7 +319,8 @@ export async function handleFetchJob(_data: any): Promise<FetchJobResult> {
         matchedMessages = exactMatches.filter((msg) => {
           const orderTime = order.createdAt.getTime()
           const msgTime = new Date(msg.time || msg.createdAt || Date.now()).getTime()
-          return msgTime >= orderTime - 180000 && msgTime <= orderTime + 900000
+          // FIXED: Only accept messages sent AFTER order was created
+          return msgTime >= orderTime && msgTime <= orderTime + 900000
         })
       }
 
@@ -331,7 +332,8 @@ export async function handleFetchJob(_data: any): Promise<FetchJobResult> {
             const partials = msgs.filter((msg) => {
               const orderTime = order.createdAt.getTime()
               const msgTime = new Date(msg.time || msg.createdAt || Date.now()).getTime()
-              return msgTime >= orderTime - 180000 && msgTime <= orderTime + 900000
+              // FIXED: Only accept messages sent AFTER order was created
+              return msgTime >= orderTime && msgTime <= orderTime + 900000
             })
             if (partials.length > 0) {
               matchedMessages = partials
