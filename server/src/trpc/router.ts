@@ -1008,22 +1008,28 @@ export const appRouter = router({
     activation: publicProcedure.query(async () => {
       const now = new Date()
       const istDate = new Date(now.getTime() + (5.5 * 60 * 60 * 1000))
+      const startOfDay = new Date(now.setHours(0, 0, 0, 0))
 
       // Get basic stats
-      const [totalNumbers, activeNumbers, suspendedNumbers, todayOrders, totalDevices, allDevices] = await Promise.all([
+      const [totalNumbers, activeNumbers, suspendedNumbers, todayOrdersData, totalDevices, allDevices] = await Promise.all([
         prisma.numbers.count(),
         prisma.numbers.count({ where: { active: true, suspended: false } }),
         prisma.numbers.count({ where: { suspended: true } }),
-        prisma.orders.count({
+        prisma.orders.findMany({
           where: {
-            createdAt: {
-              gte: new Date(now.setHours(0, 0, 0, 0))
-            }
-          }
+            createdAt: { gte: startOfDay }
+          },
+          select: { isused: true, active: true }
         }),
         prisma.device.count(),
         prisma.device.findMany({ select: { deviceId: true, lastSeen: true, status: true } })
       ])
+
+      // Calculate today's order statistics
+      const todayTotal = todayOrdersData.length
+      const todaySuccess = todayOrdersData.filter(o => o.isused).length
+      const todayCanceled = todayOrdersData.filter(o => !o.active && !o.isused).length
+      const successRate = todayTotal > 0 ? Math.round((todaySuccess / todayTotal) * 100) : 0
 
       // Calculate actually online devices (lastSeen within 2 minutes)
       const ONLINE_THRESHOLD_MS = 120000 // 2 minutes
@@ -1043,7 +1049,10 @@ export const appRouter = router({
         totalNumbers,
         activeNumbers,
         suspendedNumbers,
-        todayOrders,
+        todayOrders: todayTotal,
+        todaySuccess,
+        todayCanceled,
+        successRate,
         totalDevices,
         activeDevices,
         lastDeviceSync: syncCron?.lastRun || null,
@@ -1069,7 +1078,7 @@ export const appRouter = router({
           orderBy: { createdAt: 'asc' }
         })
 
-        // Group by date
+        // Group by date with success/cancel breakdown
         const chartData = []
         for (let i = 0; i < days; i++) {
           const date = new Date(startDate)
@@ -1080,9 +1089,14 @@ export const appRouter = router({
             return orderDate.toDateString() === date.toDateString()
           })
 
+          const success = dayOrders.filter(o => o.isused).length
+          const canceled = dayOrders.filter(o => !o.active && !o.isused).length
+
           chartData.push({
             date: date.toISOString().split('T')[0],
-            count: dayOrders.length
+            success,
+            canceled,
+            total: dayOrders.length
           })
         }
 
@@ -1143,16 +1157,21 @@ export const appRouter = router({
         orderBy: { createdAt: 'asc' }
       })
 
-      // Group by hour
+      // Group by hour with success/cancel breakdown
       const hourlyData = Array.from({ length: 24 }, (_, hour) => {
         const hourOrders = orders.filter(order => {
           const orderHour = new Date(order.createdAt).getHours()
           return orderHour === hour
         })
 
+        const success = hourOrders.filter(o => o.isused).length
+        const canceled = hourOrders.filter(o => !o.active && !o.isused).length
+
         return {
           hour: `${hour.toString().padStart(2, '0')}:00`,
-          count: hourOrders.length
+          success,
+          canceled,
+          total: hourOrders.length
         }
       })
 

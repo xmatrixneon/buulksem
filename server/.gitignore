@@ -44,3 +44,7 @@ coverage/
 .cache/
 .temp/
 tmp/
+
+# Firebase Service Account (contains sensitive credentials)
+service-account-key.json
+service-account-*.json

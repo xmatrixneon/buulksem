@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { ActivationActionChart } from "@/components/dashboard-chat"
 import { TodaySuccessChart } from "@/components/bar-chart"
 import { useTRPC } from "@/lib/trpc/client"
-import { Users, Activity, Building, Zap, Clock, RefreshCw, BarChart3 } from "lucide-react"
+import { Users, Activity, Building, Zap, Clock, RefreshCw, BarChart3, TrendingUp } from "lucide-react"
 
 export default function DashboardContent() {
   const trpc = useTRPC()
@@ -150,7 +150,49 @@ export default function DashboardContent() {
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold">{activationData?.todayOrders ?? "-"}</div>
-                <p className="text-xs text-muted-foreground">Orders created today</p>
+                <p className="text-xs text-muted-foreground">
+                  {activationData?.todaySuccess ?? 0} successful · {activationData?.todayCanceled ?? 0} canceled
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Success Rate Stats */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" />
+                  Success Rate (Today)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-green-600">{activationData?.successRate ?? 0}%</div>
+                <p className="text-xs text-muted-foreground">
+                  {activationData?.todaySuccess ?? 0} of {activationData?.todayOrders ?? 0} orders successful
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Zap className="h-4 w-4" />
+                  Order Breakdown
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4">
+                  <div>
+                    <div className="text-2xl font-bold text-green-600">{activationData?.todaySuccess ?? 0}</div>
+                    <p className="text-xs text-muted-foreground">Successful</p>
+                  </div>
+                  <div className="text-muted-foreground">|</div>
+                  <div>
+                    <div className="text-2xl font-bold text-red-600">{activationData?.todayCanceled ?? 0}</div>
+                    <p className="text-xs text-muted-foreground">Canceled</p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>

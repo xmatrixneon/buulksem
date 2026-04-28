@@ -9,6 +9,7 @@ import {
   YAxis,
   CartesianGrid,
   Legend,
+  ResponsiveContainer,
 } from "recharts"
 import {
   ChartContainer,
@@ -20,14 +21,16 @@ import { useTRPC } from "@/lib/trpc/client"
 
 interface ChartData {
   date: string
-  activation: number
-  action: number
-  cancel: number
+  success: number
+  canceled: number
+  total: number
 }
 
 interface ApiChartData {
   date: string
-  count: number
+  success: number
+  canceled: number
+  total: number
 }
 
 export function ActivationActionChart() {
@@ -42,9 +45,9 @@ export function ActivationActionChart() {
     try {
       return apiChartData.map(item => ({
         date: item.date ? new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Unknown',
-        activation: item.count || 0,
-        action: 0, // Not available in current data
-        cancel: 0 // Not available in current data
+        success: item.success || 0,
+        canceled: item.canceled || 0,
+        total: item.total || 0
       }))
     } catch (error) {
       console.error('Error transforming chart data:', error)
@@ -65,38 +68,53 @@ export function ActivationActionChart() {
         ) : (
           <ChartContainer
             config={{
-              activation: {
-                label: "Orders",
+              success: {
+                label: "Success",
                 theme: {
-                  light: "oklch(0.5583 0.1276 42.9956)",
-                  dark: "oklch(0.5583 0.1276 42.9956)",
+                  light: "oklch(0.647 0.206 150.7)",
+                  dark: "oklch(0.647 0.206 150.7)",
+                },
+              },
+              canceled: {
+                label: "Canceled",
+                theme: {
+                  light: "oklch(0.627 0.265 25.3)",
+                  dark: "oklch(0.627 0.265 25.3)",
                 },
               },
             }}
             className="h-[300px] w-full"
           >
-            <BarChart data={chartData} width={639} height={300}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 12 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 12 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Legend />
-              <Bar
-                dataKey="activation"
-                fill="var(--color-activation)"
-                name="Orders"
-                radius={[8, 8, 0, 0]}
-              />
-            </BarChart>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Legend />
+                <Bar
+                  dataKey="success"
+                  fill="var(--color-success)"
+                  name="Success"
+                  radius={[8, 8, 0, 0]}
+                />
+                <Bar
+                  dataKey="canceled"
+                  fill="var(--color-canceled)"
+                  name="Canceled"
+                  radius={[8, 8, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
           </ChartContainer>
         )}
       </CardContent>
