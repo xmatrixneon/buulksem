@@ -114,6 +114,7 @@ model Orders {
   failureReason  String   @default("none")
   qualityImpact  Int      @default(0)
   numberSnapshot Json?
+  cooldownUntil  DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }

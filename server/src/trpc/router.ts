@@ -943,30 +943,63 @@ export const appRouter = router({
           throw new Error('Lock not found')
         }
 
-        const result = await prisma.lock.deleteMany({
-          where: {
-            id: input.id
-          }
-        })
+        // Delete lock and clear cooldown state for this number/service/country
+        const [lockResult] = await Promise.all([
+          prisma.lock.deleteMany({
+            where: { id: input.id }
+          }),
+          // Clear cooldown for associated orders
+          prisma.orders.updateMany({
+            where: {
+              number: lock.number,
+              countryid: lock.countryid,
+              serviceid: lock.serviceid,
+              active: false,
+              cooldownUntil: { not: null }
+            },
+            data: { cooldownUntil: null }
+          })
+        ])
 
         return {
           success: true,
-          count: result.count,
-          message: `Unlocked ${result.count} lock(s)`
+          count: lockResult.count,
+          message: `Unlocked ${lockResult.count} lock(s) and cleared cooldown`
         }
       }),
 
     unlockAll: protectedProcedure
       .input(z.object({ serviceid: z.string() }))
       .mutation(async ({ input }) => {
-        const result = await prisma.lock.deleteMany({
+        // Find all locks for this service first
+        const locks = await prisma.lock.findMany({
           where: { serviceid: input.serviceid }
         })
 
+        // Delete locks and clear cooldown states
+        const [lockResult] = await Promise.all([
+          prisma.lock.deleteMany({
+            where: { serviceid: input.serviceid }
+          }),
+          // Clear cooldown for all affected orders
+          ...locks.map(lock =>
+            prisma.orders.updateMany({
+              where: {
+                number: lock.number,
+                countryid: lock.countryid,
+                serviceid: lock.serviceid,
+                active: false,
+                cooldownUntil: { not: null }
+              },
+              data: { cooldownUntil: null }
+            })
+          )
+        ])
+
         return {
           success: true,
-          count: result.count,
-          message: `Unlocked ${result.count} lock(s) for service`
+          count: lockResult.count,
+          message: `Unlocked ${lockResult.count} lock(s) and cleared cooldown for service`
         }
       })
   }),
