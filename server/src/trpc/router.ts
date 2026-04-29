@@ -1067,13 +1067,15 @@ export const appRouter = router({
       }).optional())
       .query(async ({ input }) => {
         const days = input?.days ?? 7
-        const startDate = new Date()
-        startDate.setDate(startDate.getDate() - days)
+        const today = new Date()
+        today.setHours(23, 59, 59, 999)
+        const startDate = new Date(today)
+        startDate.setDate(startDate.getDate() - (days - 1))
         startDate.setHours(0, 0, 0, 0)
 
         const orders = await prisma.orders.findMany({
           where: {
-            createdAt: { gte: startDate }
+            createdAt: { gte: startDate, lte: today }
           },
           orderBy: { createdAt: 'asc' }
         })

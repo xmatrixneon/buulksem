@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from 'react';
+import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
 import { Activity, RefreshCw, Shield, Signal, Phone, CheckCircle2, XCircle, AlertTriangle, Search } from 'lucide-react';
 import {
@@ -55,7 +55,6 @@ interface Number {
 export default function NumberManagement() {
   const trpc = useTRPC()
   const [filter, setFilter] = useState<'all' | 'suspended' | 'warning' | 'active'>('all');
-  const [page, setPage] = useState(1);
   const [selectedNumbers, setSelectedNumbers] = useState<Set<number>>(new Set());
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -64,24 +63,40 @@ export default function NumberManagement() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(searchInput);
-      setPage(1);
     }, 500);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // tRPC query for fetching quality numbers
-  const { data, isLoading, refetch } = useQuery({
-    ...trpc.numbers.quality.queryOptions({
-      filter,
-      page,
-      limit: 50,
-    }),
-    refetchOnWindowFocus: false,
+  // Infinite scroll query for numbers
+  const {
+    data: infiniteData,
+    isLoading,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['numbers', filter],
+    queryFn: async ({ pageParam = 1 }) => {
+      const result = await fetch(`/trpc/numbers.quality?input=${encodeURIComponent(JSON.stringify({
+        filter,
+        page: pageParam,
+        limit: 50,
+      }))}`)
+      if (!result.ok) throw new Error('Failed to fetch')
+      const data = await result.json()
+      return data.result.data.json
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage?.data || lastPage.data.length < 50) return undefined
+      return allPages.length + 1
+    },
   })
 
-  const numbers = data?.data || []
-  const totalPages = data?.pagination?.pages || 1
-  const stats = data?.stats || {
+  // Flatten pages
+  const numbers = infiniteData?.pages.flatMap(p => p?.data || []) || []
+  const stats = infiniteData?.pages?.[0]?.stats || {
     totalCount: 0,
     activeCount: 0,
     suspendedCount: 0,
@@ -93,6 +108,31 @@ export default function NumberManagement() {
     if (!search) return true;
     return n.number?.toString().includes(search);
   });
+
+  // Intersection Observer for infinite scroll
+  const observerTarget = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage()
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = observerTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget)
+      }
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   // tRPC mutation for bulk actions
   const bulkActionMutation = useMutation({
@@ -254,7 +294,6 @@ export default function NumberManagement() {
           value={filter}
           onValueChange={(value: any) => {
             setFilter(value);
-            setPage(1);
             setSelectedNumbers(new Set());
           }}
         >
@@ -410,31 +449,29 @@ export default function NumberManagement() {
                 </Table>
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between p-4">
-                  <div className="text-sm text-muted-foreground">
-                    Page <span className="font-medium">{page}</span> of{' '}
-                    <span className="font-medium">{totalPages}</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                    >
-                      Next
-                    </Button>
-                  </div>
+              {/* Result Count */}
+              <div className="flex items-center justify-center p-4 text-sm text-muted-foreground">
+                Showing {filteredNumbers.length} of {numbers.length} numbers
+              </div>
+
+              {/* Intersection Observer Target */}
+              <div ref={observerTarget} className="h-1" />
+
+              {/* Loading indicator */}
+              {isFetchingNextPage && (
+                <div className="flex items-center justify-center p-4 text-sm text-muted-foreground">
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Loading more numbers...
+                </div>
+              )}
+
+              {/* Real count display */}
+              {numbers.length > 0 && (
+                <div className="flex items-center justify-center p-4 text-sm text-muted-foreground">
+                  {hasNextPage
+                    ? `Showing ${numbers.length} of ${totalCount} total numbers (scroll for more...)`
+                    : `Showing all ${totalCount} numbers`
+                  }
                 </div>
               )}
             </>

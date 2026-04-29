@@ -33,15 +33,15 @@ export async function generateSmsTemplate(smsText: string): Promise<SmsTemplateR
   }
 
   try {
-    const prompt = `Return FULL SMS template.
+    const prompt = `Convert SMS to template by replacing dynamic VALUES with placeholders.
 
 Rules:
-- Only ONE {otp}
-- Use {time} for duration
-- Use {date} for date
-- Use {random} for simple alphanumeric
-- Use {any} for URLs / complex / symbols
-- Do NOT replace normal words
+- Replace OTP NUMBERS (4-8 digits) with {otp} - NOT the word "OTP"
+- Use {time} for duration values like "5 minutes", "100 secs"
+- Use {date} for date values like "28 Apr 2025"
+- Use {random} for simple random alphanumeric codes
+- Use {any} for URLs, app names, or complex strings
+- Keep ALL words including "OTP", "code", "password" unchanged
 - Keep structure exact
 
 Input SMS: "${smsText}"

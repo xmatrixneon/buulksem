@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useQuery, useMutation } from "@tanstack/react-query"
+import { useState, useRef, useEffect } from "react"
+import { useInfiniteQuery, useMutation } from "@tanstack/react-query"
 import { useTRPC } from "@/lib/trpc/client"
 import { formatDistanceToNow } from "date-fns"
 import { Trash2, Mail, User, Clock, Search, MessageSquare, RefreshCw, Inbox, Copy } from "lucide-react"
@@ -34,24 +34,64 @@ export default function MessagesGridWithTRPC() {
   const trpc = useTRPC()
 
   const [search, setSearch] = useState("")
-  const [currentPage, setCurrentPage] = useState(1)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null)
-  const itemsPerPage = 9
 
-  // tRPC query for fetching messages
+  // Infinite scroll query for messages
   const {
-    data: messages = [],
+    data: infiniteData,
     isLoading,
+    isRefetching,
     refetch,
-  } = useQuery({
-    ...trpc.messages.list.queryOptions({
-      limit: 100,
-      offset: 0,
-    }),
-    refetchOnWindowFocus: false,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['messages'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const result = await fetch(`/trpc/messages.list?input=${encodeURIComponent(JSON.stringify({
+        limit: 50,
+        offset: pageParam,
+      }))}`)
+      if (!result.ok) throw new Error('Failed to fetch')
+      const data = await result.json()
+      return data.result.data.json
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.length < 50) return undefined
+      return allPages.length * 50
+    },
   })
+
+  // Flatten all pages
+  const messages = infiniteData?.pages.flat() || []
+
+  // Intersection Observer for infinite scroll
+  const observerTarget = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage()
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = observerTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget)
+      }
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -59,6 +99,7 @@ export default function MessagesGridWithTRPC() {
     onSuccess: () => {
       console.log('[Messages] Delete mutation succeeded')
       toast.success("Message deleted successfully")
+      // Refetch from first page for infinite query
       refetch()
       setDeleteDialogOpen(false)
       setMessageToDelete(null)
@@ -108,13 +149,6 @@ export default function MessagesGridWithTRPC() {
     m.receiver.toLowerCase().includes(search.toLowerCase())
   )
 
-  // Pagination
-  const totalPages = Math.ceil(filteredMessages.length / itemsPerPage)
-  const paginatedMessages = filteredMessages.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
-
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -127,8 +161,8 @@ export default function MessagesGridWithTRPC() {
             View and manage received SMS messages
           </p>
         </div>
-        <Button variant="outline" onClick={() => refetch()} disabled={isLoading} className="w-full sm:w-auto">
-          <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+        <Button variant="outline" onClick={() => refetch()} disabled={isRefetching} className="w-full sm:w-auto">
+          <RefreshCw className={`h-4 w-4 mr-2 ${isRefetching ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>
@@ -139,10 +173,7 @@ export default function MessagesGridWithTRPC() {
         <Input
           placeholder="Search messages..."
           value={search}
-          onChange={(e) => {
-            setSearch(e.target.value)
-            setCurrentPage(1)
-          }}
+          onChange={(e) => setSearch(e.target.value)}
           className="pl-10"
         />
       </div>
@@ -162,7 +193,7 @@ export default function MessagesGridWithTRPC() {
             </Card>
           ))}
         </div>
-      ) : paginatedMessages.length === 0 ? (
+      ) : filteredMessages.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
             <MessageSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
@@ -172,7 +203,7 @@ export default function MessagesGridWithTRPC() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {paginatedMessages.map((msg: any) => (
+            {filteredMessages.map((msg: any) => (
               <Card key={msg.id} className="relative group">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
@@ -224,34 +255,24 @@ export default function MessagesGridWithTRPC() {
             ))}
           </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">
-                Showing {Math.min(filteredMessages.length, (currentPage - 1) * itemsPerPage + 1)}-
-                {Math.min(currentPage * itemsPerPage, filteredMessages.length)} of{" "}
-                {filteredMessages.length} messages
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                  disabled={currentPage === 1}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                >
-                  Next
-                </Button>
-              </div>
+          {/* Intersection Observer Target */}
+          <div ref={observerTarget} className="h-1" />
+
+          {/* Loading indicator */}
+          {isFetchingNextPage && (
+            <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              Loading more messages...
             </div>
           )}
+
+          {/* Result Count */}
+          <div className="flex items-center justify-center text-sm text-muted-foreground py-4">
+            {hasNextPage
+              ? `Showing ${filteredMessages.length}+ messages (scroll down for more...)`
+              : `Showing all ${messages.length} messages`
+            }
+          </div>
         </>
       )}
 

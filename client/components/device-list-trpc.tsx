@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query'
 import { useTRPC } from '@/lib/trpc/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Smartphone, Search, Wifi, WifiOff, PhoneForwarded, PhoneOff, Send, Power,
+  Smartphone, Search, Wifi, WifiOff, PhoneForwarded, PhoneOff, Send, Power, RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -117,19 +117,67 @@ export function DeviceListWithTRPC() {
   const [statusFilter, setStatusFilter] = useState<'online' | 'offline' | 'all'>('all')
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null)
 
-  // tRPC queries
+  // Get total count from dashboard stats (real database count)
+  const { data: overviewData } = useQuery(
+    trpc.overview.activation.queryOptions()
+  )
+  const totalDeviceCount = overviewData?.totalDevices ?? 0
+
+  // Infinite scroll query with best practices
   const {
-    data: devices = [],
+    data: infiniteData,
     isLoading: devicesLoading,
     error: devicesError,
-    refetch: refetchDevices
-  } = useQuery(
-    trpc.device.list.queryOptions({
-      status: statusFilter,
-      limit: 50,
-      offset: 0
-    })
-  )
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    refetch: refetchDevices,
+  } = useInfiniteQuery({
+    queryKey: ['devices', statusFilter],
+    queryFn: async ({ pageParam = 0 }) => {
+      const result = await fetch(`/trpc/device.list?input=${encodeURIComponent(JSON.stringify({
+        status: statusFilter,
+        limit: 30,
+        offset: pageParam,
+      }))}`)
+      if (!result.ok) throw new Error('Failed to fetch')
+      const data = await result.json()
+      return data.result.data.json
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.length < 30) return undefined
+      return allPages.length * 30
+    },
+  })
+
+  // Flatten all pages into single array
+  const devices = infiniteData?.pages.flat() || []
+
+  // Intersection Observer for infinite scroll (best practice from Context7)
+  const observerTarget = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage()
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = observerTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget)
+      }
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   // WebSocket for real-time updates
   const wsRef = useRef<WebSocket | null>(null)
@@ -342,7 +390,30 @@ export function DeviceListWithTRPC() {
         })}
       </div>
 
-      {filteredDevices.length === 0 && (
+      {/* Intersection Observer Target (invisible) */}
+      <div ref={observerTarget} className="h-1" />
+
+      {/* Loading indicator */}
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-6">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <RefreshCw className="h-5 w-5 animate-spin" />
+            <span>Loading more devices...</span>
+          </div>
+        </div>
+      )}
+
+      {/* End of list message */}
+      {filteredDevices.length > 0 && (
+        <div className="text-center py-4 text-sm text-muted-foreground">
+          {hasNextPage
+            ? `Showing ${devices.length} of ${totalDeviceCount} devices (scroll for more...)`
+            : `Showing all ${totalDeviceCount} devices`
+          }
+        </div>
+      )}
+
+      {filteredDevices.length === 0 && !devicesLoading && (
         <div className="text-center py-12 text-muted-foreground">
           <Smartphone className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>No devices found</p>
