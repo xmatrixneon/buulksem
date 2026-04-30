@@ -2,8 +2,7 @@
  * Fetch Handler
  *
  * OTP fetch job handler with batch optimization.
- * Integrates with Service model for format fallback, Lock model for number locking,
- * and Numbers model for quality tracking.
+ * Based on proven working logic from production system.
  */
 
 import { prisma } from '../../db/prisma'
@@ -39,7 +38,7 @@ interface FetchJobResult {
   error?: string
 }
 
-// Escape regex special chars
+// Escape regex special chars (same as working version)
 function escapeRegex(s: string = ''): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -51,7 +50,7 @@ function normalizeToSingleLine(str: string = ''): string {
     .trim()
 }
 
-// Smart OTP regex builder — generalized to handle any {otpN} length dynamically
+// Smart OTP regex builder - based on working version
 function buildSmartOtpRegexList(formats: any[]): RegExp[] {
   if (!formats || formats.length === 0) return []
   if (!Array.isArray(formats)) formats = [formats]
@@ -59,12 +58,14 @@ function buildSmartOtpRegexList(formats: any[]): RegExp[] {
   return formats
     .map((format) => {
       format = normalizeToSingleLine(format)
+
+      // Check for any OTP pattern: {otp}, {otp4}, {otp5}, {otp6}, etc.
       if (!format.includes('{otp')) return null
 
       let pattern = escapeRegex(format)
       let isFirstOtp = true
 
-      // OTP FIX - Fixed-length OTP
+      // Handle fixed-length OTP patterns: {otp4}, {otp5}, {otp6}, {otp7}, {otp8}
       const fixedOtpMatch = format.match(/\{otp(\d+)\}/)
       if (fixedOtpMatch) {
         const length = parseInt(fixedOtpMatch[1], 10)
@@ -76,34 +77,29 @@ function buildSmartOtpRegexList(formats: any[]): RegExp[] {
           return `(?:\\b\\d{${length}}\\b)`
         })
       } else {
-        // OTP FIX - Stronger regex for OTP and voucher codes
+        // Handle {otp} - 3-12 characters (working version logic)
         pattern = pattern.replace(/\\\{otp\\\}/gi, () => {
           if (isFirstOtp) {
             isFirstOtp = false
-            return '(?<otp>\\d{4,8}|[A-Za-z0-9\\-]{6,25})'
+            return '(?<otp>[A-Za-z0-9\\-]{3,12})'
           }
-          return '(?:\\d{4,8}|[A-Za-z0-9\\-]{6,25})'
+          return '(?:[A-Za-z0-9\\-]{3,12})'
         })
       }
 
-      // Placeholders - FIX random vs any
+      // Placeholders - same as working version
       pattern = pattern.replace(/\\\{date\\\}/gi, '.*?')
-      pattern = pattern.replace(/\\\{time\\\}/gi, '.*?')
       pattern = pattern.replace(/\\\{datetime\\\}/gi, '.*?')
-      pattern = pattern.replace(/\\\{random\\\}/gi, '[A-Za-z0-9]{3,15}')
+      pattern = pattern.replace(/\\\{time\\\}/gi, '.*?')
+      pattern = pattern.replace(/\\\{random\\\}/gi, '.+?')
       pattern = pattern.replace(/\\\{any\\\}/gi, '.*?')
       pattern = pattern.replace(/\\\{.*?\\\}/gi, '.*?')
 
-      // Spacing + punctuation - FIX dot
+      // Spacing + punctuation - same as working version
       pattern = pattern
         .replace(/\\s+/g, '\\s*')
         .replace(/\\:/g, '[:：]?')
-        .replace(/\\\./g, '\\.?') // FIXED: was .*?
-
-      // Bracket support - NEW
-      pattern = pattern
-        .replace(/\\\(/g, '[\\(\\[\\{【]?')
-        .replace(/\\\)/g, '[\\)\\]\\}】]?')
+        .replace(/\\\./g, '.*?') // Key: make dots match anything
 
       return new RegExp(pattern, 'i')
     })
@@ -112,7 +108,6 @@ function buildSmartOtpRegexList(formats: any[]): RegExp[] {
 
 /**
  * Pre-fetch all services needed by a list of orders in ONE query.
- * Returns a map of serviceid -> service for O(1) access per order.
  */
 async function buildServiceCache(
   orders: Array<{ serviceid: string }>
@@ -138,8 +133,7 @@ function getOrderMaxmessage(order: any, serviceCache: Map<string, any>): number 
 }
 
 /**
- * Batch update quality for multiple numbers:
- * 1 read (findMany) + parallel writes
+ * Batch update quality for multiple numbers
  */
 async function batchUpdateNumberQuality(updates: QualityUpdate[]): Promise<void> {
   if (updates.length === 0) return
@@ -216,7 +210,7 @@ export async function handleFetchJob(_data: any): Promise<FetchJobResult> {
       return { success: true, processed: 0, errors: 0, otpsFound: 0, expired: 0, locksCreated: 0, duration: 0 }
     }
 
-    // Pre-fetch all services in ONE query (shared by all orders)
+    // Pre-fetch all services in ONE query
     const serviceCache = await buildServiceCache(activeOrders)
     console.log(`[Fetch] Loaded ${serviceCache.size} services into cache`)
 
@@ -241,7 +235,9 @@ export async function handleFetchJob(_data: any): Promise<FetchJobResult> {
     const messagesByReceiver = new Map<string, typeof allRecentMessages>()
     for (const msg of allRecentMessages) {
       const receiver = msg.receiver || ''
-      if (!messagesByReceiver.has(receiver)) messagesByReceiver.set(receiver, [])
+      if (!messagesByReceiver.has(receiver)) {
+        messagesByReceiver.set(receiver, [])
+      }
       messagesByReceiver.get(receiver)!.push(msg)
     }
 
@@ -341,10 +337,6 @@ export async function handleFetchJob(_data: any): Promise<FetchJobResult> {
             }
           }
         }
-      }
-
-      if (matchedMessages.length > 0) {
-        console.log(`[Fetch] Order ${order.id} — matched ${matchedMessages.length} messages`)
       }
 
       // 5. Multi-use logic - auto-accept messages up to maxmessage limit

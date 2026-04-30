@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useState, useRef, useEffect } from "react";
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatDistanceToNow } from "date-fns";
 import { Lock, Unlock, Trash2, Signal, Search, Phone, RefreshCw, BarChart3, Wifi, Globe, Hash } from "lucide-react";
@@ -58,23 +58,71 @@ export default function NumbersGridWithTRPC() {
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
-  const [currentPage, setCurrentPage] = useState(1);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [numberToDelete, setNumberToDelete] = useState<string | null>(null);
-  const itemsPerPage = 10;
 
-  // tRPC query for fetching numbers
-  const {
-    data: numbers = [],
-    isLoading,
-    refetch,
-  } = useQuery({
-    ...trpc.numbers.list.queryOptions({
-      limit: 100,
-      offset: 0,
-    }),
+  // Get real database counts from overview API
+  const { data: overviewData } = useQuery({
+    ...trpc.overview.activation.queryOptions(),
     refetchOnWindowFocus: false,
   });
+
+  // Infinite scroll with Context7 best practices
+  const {
+    data: infiniteData,
+    isLoading,
+    isRefetching,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['numbers'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const result = await fetch(`/trpc/numbers.list?input=${encodeURIComponent(JSON.stringify({
+        limit: 50, // Reasonable page size
+        offset: pageParam,
+      }))}`)
+      if (!result.ok) throw new Error('Failed to fetch')
+      const data = await result.json()
+      return data.result.data.json
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      // Context7: return undefined when no more data
+      if (!lastPage || lastPage.length < 50) return undefined
+      return allPages.length * 50
+    },
+    maxPages: 5, // Context7: limit stored pages for performance
+  });
+
+  // Flatten pages - API returns array directly
+  const numbers = infiniteData?.pages.flat() || [];
+
+  // Intersection Observer for infinite scroll (Context7 best practice)
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -117,7 +165,7 @@ export default function NumbersGridWithTRPC() {
     );
   };
 
-  // Filtering + Sorting + Pagination
+  // Client-side filtering (search and status filter)
   const filteredNumbers = numbers
     .filter((n: any) => n.number.toString().includes(search))
     .filter((n: any) => {
@@ -127,16 +175,10 @@ export default function NumbersGridWithTRPC() {
     })
     .sort((a: any, b: any) => (a.active === b.active ? 0 : a.active ? -1 : 1));
 
-  const totalPages = Math.ceil(filteredNumbers.length / itemsPerPage);
-  const paginatedNumbers = filteredNumbers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  // Counters
-  const totalCount = numbers.length;
-  const activeCount = numbers.filter((n: any) => n.active).length;
-  const inactiveCount = numbers.filter((n: any) => !n.active).length;
+  // Real database counts from overview API (not based on scroll limit)
+  const totalCount = overviewData?.totalNumbers ?? 0;
+  const activeCount = overviewData?.activeNumbers ?? 0;
+  const inactiveCount = totalCount - activeCount;
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -209,19 +251,13 @@ export default function NumbersGridWithTRPC() {
           <Input
             placeholder="Search numbers..."
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setCurrentPage(1);
-            }}
+            onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
           />
         </div>
         <Select
           value={filter}
-          onValueChange={(value: any) => {
-            setFilter(value);
-            setCurrentPage(1);
-          }}
+          onValueChange={(value: any) => setFilter(value)}
         >
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Filter status" />
@@ -258,14 +294,14 @@ export default function NumbersGridWithTRPC() {
                       <div className="animate-pulse text-muted-foreground">Loading numbers...</div>
                     </TableCell>
                   </TableRow>
-                ) : paginatedNumbers.length === 0 ? (
+                ) : filteredNumbers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8">
                       <div className="text-muted-foreground">No numbers found</div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedNumbers.map((n: any) => (
+                  filteredNumbers.map((n: any) => (
                     <TableRow key={n._id}>
                       <TableCell className="font-medium">{n.number}</TableCell>
                       <TableCell>
@@ -314,32 +350,26 @@ export default function NumbersGridWithTRPC() {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
+      {/* Intersection Observer Target */}
+      <div ref={observerTarget} className="h-1" />
+
+      {/* Loading indicator */}
+      {isFetchingNextPage && (
+        <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
+          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+          Loading more numbers...
+        </div>
+      )}
+
+      {/* Result Count */}
       {!isLoading && filteredNumbers.length > 0 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {Math.min(filteredNumbers.length, (currentPage - 1) * itemsPerPage + 1)}-
-            {Math.min(currentPage * itemsPerPage, filteredNumbers.length)} of{" "}
-            {filteredNumbers.length} numbers
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-              disabled={currentPage === totalPages}
-            >
-              Next
-            </Button>
-          </div>
+        <div className="text-center py-4 text-sm text-muted-foreground">
+          {hasNextPage
+            ? `Showing ${numbers.length} of ${totalCount} total numbers (scroll for more...)`
+            : search || filter !== "all"
+              ? `Showing ${filteredNumbers.length} of ${totalCount} total numbers (filtered)`
+              : `Showing all ${totalCount} numbers`
+          }
         </div>
       )}
 

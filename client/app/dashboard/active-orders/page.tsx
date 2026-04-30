@@ -1,13 +1,12 @@
 "use client"
 
-import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useState, useRef, useEffect } from "react"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { useTRPC } from "@/lib/trpc/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, RefreshCw, ShoppingBag, Clock, CheckCircle, XCircle, Phone } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 
@@ -45,25 +44,52 @@ export default function ActiveOrdersPageWithTRPC() {
   const trpc = useTRPC()
 
   const [search, setSearch] = useState("")
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "completed">("all")
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 20
 
-  // tRPC query for fetching orders (all orders for proper stats)
-  const {
-    data: orders = [] as any[],
-    isLoading,
-    refetch,
-  } = useQuery({
-    ...trpc.orders.list.queryOptions({
-      limit: 100,
-      offset: 0,
-    }),
+  // Get total count from overview (lightweight query)
+  const { data: overviewData } = useQuery({
+    ...trpc.overview.activation.queryOptions(),
     refetchOnWindowFocus: false,
   })
 
-  // Filter orders - show all active orders (including multi-use orders waiting for more SMS)
-  const activeOrdersList = (orders as any[]).filter((order: any) => order.active)  // All active orders
+  // Infinite scroll with best practices from Context7
+  const {
+    data: infiniteData,
+    isLoading,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['orders', 'active'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const result = await fetch(`/trpc/orders.list?input=${encodeURIComponent(JSON.stringify({
+        limit: 50, // Reasonable page size
+        offset: pageParam,
+      }))}`)
+      if (!result.ok) throw new Error('Failed to fetch')
+      const data = await result.json()
+      const orders = data.result.data.json
+
+      // Filter for active orders
+      const activeOrders = orders.filter((o: any) => o.active)
+      return activeOrders
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      // Context7 best practice: return undefined when no more data
+      if (lastPage.length < 50) return undefined
+      // Continue fetching next page
+      return lastPage.length // Could use cursor/offset
+    },
+    maxPages: 3, // Context7: limit stored pages for performance
+  })
+
+  // Flatten pages
+  const activeOrdersList = infiniteData?.pages.flat() || []
+
+  // Stats cards - real data from overview API
+  const totalOrders = overviewData?.todayOrders || 0 // Today's total orders
+  const activeOrders = overviewData?.activeOrders || 0 // Real active orders count from database
 
   const filteredOrders = activeOrdersList.filter((order: any) => {
     const matchesSearch =
@@ -74,16 +100,30 @@ export default function ActiveOrdersPageWithTRPC() {
     return matchesSearch
   })
 
-  // Pagination
-  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage)
-  const paginatedOrders = filteredOrders.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
+  // Intersection Observer for infinite scroll (best practice from Context7)
+  const observerTarget = useRef<HTMLDivElement>(null)
 
-  // Stats - Total orders (all), Active (waiting for OTP and still active)
-  const totalOrders = (orders as any[]).length
-  const activeOrders = activeOrdersList.filter((o: any) => o.active).length
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage()
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = observerTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget)
+      }
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   const getStatusBadge = (order: Order) => {
     // If OTP has been received, it's completed
@@ -143,10 +183,7 @@ export default function ActiveOrdersPageWithTRPC() {
           <Input
             placeholder="Search active orders..."
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
-              setCurrentPage(1)
-            }}
+            onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
           />
         </div>
@@ -175,14 +212,14 @@ export default function ActiveOrdersPageWithTRPC() {
                       <div className="animate-pulse text-muted-foreground">Loading orders...</div>
                     </td>
                   </tr>
-                ) : paginatedOrders.length === 0 ? (
+                ) : filteredOrders.length === 0 ? (
                   <tr key="empty">
                     <td colSpan={7} className="text-center py-8">
                       <div className="text-muted-foreground">No orders found</div>
                     </td>
                   </tr>
                 ) : (
-                  paginatedOrders.map((order: any) => (
+                  filteredOrders.map((order: any) => (
                     <tr key={order._id} className="border-b hover:bg-muted/50">
                       <td className="p-4">
                         <div className="flex items-center gap-2">
@@ -215,32 +252,26 @@ export default function ActiveOrdersPageWithTRPC() {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
-      {!isLoading && filteredOrders.length > 0 && totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {Math.min(filteredOrders.length, (currentPage - 1) * itemsPerPage + 1)}-
-            {Math.min(currentPage * itemsPerPage, filteredOrders.length)} of{" "}
-            {filteredOrders.length} orders
+      {/* Intersection Observer Target */}
+      <div ref={observerTarget} className="h-1" />
+
+      {/* Loading indicator */}
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-4">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <span>Loading more orders...</span>
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-              disabled={currentPage === totalPages}
-            >
-              Next
-            </Button>
-          </div>
+        </div>
+      )}
+
+      {/* Result Count */}
+      {!isLoading && filteredOrders.length > 0 && (
+        <div className="text-center py-4 text-sm text-muted-foreground">
+          {hasNextPage
+            ? `Showing ${activeOrdersList.length} of ${activeOrders} active orders (scroll for more...)`
+            : `Showing all ${activeOrders} active orders`
+          }
         </div>
       )}
     </div>

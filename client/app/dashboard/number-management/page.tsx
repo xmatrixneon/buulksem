@@ -449,11 +449,6 @@ export default function NumberManagement() {
                 </Table>
               </div>
 
-              {/* Result Count */}
-              <div className="flex items-center justify-center p-4 text-sm text-muted-foreground">
-                Showing {filteredNumbers.length} of {numbers.length} numbers
-              </div>
-
               {/* Intersection Observer Target */}
               <div ref={observerTarget} className="h-1" />
 
@@ -470,7 +465,9 @@ export default function NumberManagement() {
                 <div className="flex items-center justify-center p-4 text-sm text-muted-foreground">
                   {hasNextPage
                     ? `Showing ${numbers.length} of ${totalCount} total numbers (scroll for more...)`
-                    : `Showing all ${totalCount} numbers`
+                    : search
+                      ? `Showing ${filteredNumbers.length} of ${totalCount} total numbers (filtered)`
+                      : `Showing all ${totalCount} numbers`
                   }
                 </div>
               )}

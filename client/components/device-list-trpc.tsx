@@ -252,11 +252,12 @@ export function DeviceListWithTRPC() {
     deviceMatchesFilters(device as Device, searchTerm, statusFilter)
   )
 
-  // Compute stats
+  // Real stats from overview API (database counts, not based on scrolling)
+  const activeDevicesCount = overviewData?.activeDevices ?? 0
   const stats: DeviceStats = {
-    total: devices.length,
-    online: devices.filter(d => d.status === 'online').length,
-    offline: devices.filter(d => d.status === 'offline').length,
+    total: overviewData?.totalDevices ?? 0,
+    online: activeDevicesCount,
+    offline: (overviewData?.totalDevices ?? 0) - activeDevicesCount,
   }
 
   // Mutations
