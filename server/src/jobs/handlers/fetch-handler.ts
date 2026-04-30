@@ -11,6 +11,8 @@ type LockCreateData = {
   number: number
   countryid: string
   serviceid: string
+  createdAt?: Date
+  updatedAt?: Date
 }
 
 type QualityUpdate = {
@@ -379,7 +381,7 @@ export async function handleFetchJob(_data: any): Promise<FetchJobResult> {
             updateData.numberSnapshot = { qualityScore: 100, consecutiveFailures: 0, signal: 0 }
 
             qualityUpdates.push({ number: order.number, impact: 5, reason: 'otp_received', orderId: order.id })
-            locksToCreate.push({ number: order.number, countryid: order.countryid, serviceid: order.serviceid })
+            locksToCreate.push({ number: order.number, countryid: order.countryid, serviceid: order.serviceid, createdAt: new Date(), updatedAt: new Date() })
           }
 
           successOrderUpdates.push({
