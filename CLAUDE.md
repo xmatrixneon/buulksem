@@ -877,3 +877,245 @@ const status = await trpc.bulkSms.getCampaignStatus.query({
 })
 // Returns: { campaign, stats, recentMessages }
 ```
+
+---
+
+## SMS Template Generator (AI-Powered)
+
+### Overview
+
+The SMS Template Generator uses DeepSeek AI to convert raw SMS messages into regex-compatible templates with placeholders for OTP extraction. This is used for defining service formats in the system.
+
+### Location
+
+**Frontend:** `/client/app/dashboard/sms-template-generator/page.tsx`
+**Backend:** `/server/src/lib/deepseek.ts`
+
+### Features
+
+- **AI-Powered Generation** - Uses DeepSeek API to analyze SMS and generate templates
+- **Regex Validation** - Validates generated templates against original SMS
+- **Interactive Improvement** - Chat-based feedback loop to refine templates
+- **Fallback Logic** - Regex-based generation when AI is unavailable
+
+### Template Placeholders
+
+| Placeholder | Matches | Example |
+|-------------|---------|---------|
+| `{otp}` | OTP code (3-12 alphanumeric) | `123456`, `ABC-123` |
+| `{otp4}`, `{otp5}`, `{otp6}` | Fixed-length OTP | `1234`, `12345`, `123456` |
+| `{time}` | Duration | "5 minutes", "100 secs" |
+| `{date}` | Date values | "28 Apr 2025" |
+| `{datetime}` | DateTime values | "2025-04-28 10:30" |
+| `{random}` | Purely alphanumeric strings | `abc123xyz` |
+| `{any}` | Anything else (URLs, special chars) | "https://example.com/token?id=123" |
+
+### Template Rules
+
+- Only ONE `{otp}` placeholder per template (first occurrence)
+- Repeated OTP references use `{any}`
+- Spaces collapse into `\s*` (flexible whitespace matching)
+- `:` matches `:` or full-width `：`
+- `.` matches `.*` (any characters)
+
+### API Endpoints
+
+```typescript
+trpc.utils.generateSmsTemplate.query({ smsText: string })
+// Returns: { template: string, otp: string }
+
+trpc.utils.improveTemplateWithChat.mutate({
+  originalSms: string,
+  previousTemplate: string,
+  userFeedback: string,
+  conversationHistory?: ChatMessage[]
+})
+// Returns: { template: string, otp: string, conversation: ChatMessage[] }
+```
+
+### Environment Configuration
+
+```bash
+# Server .env
+DEEPSEEK_API_KEY="your-deepseek-api-key"  # Required for AI features
+DEEPSEEK_BASE_URL="https://api.deepseek.com"  # Optional, defaults to official API
+```
+
+### Example Usage
+
+```typescript
+// Generate template from SMS
+const result = await trpc.utils.generateSmsTemplate.query({
+  smsText: "<#> 1770 is your OTP to login into Airtel Thanks app. Valid for 100 secs."
+})
+// Returns: { template: "<#> {otp} is your OTP to login into Airtel Thanks app. Valid for {time}.", otp: "1770" }
+
+// Improve with feedback
+const improved = await trpc.utils.improveTemplateWithChat.mutate({
+  originalSms: "Your code is 12345",
+  previousTemplate: "Your code is {otp}",
+  userFeedback: "Make it more flexible for different wording"
+})
+```
+
+---
+
+## Analytics Dashboard
+
+### Overview
+
+The analytics dashboard provides real-time and historical metrics for bulk SMS campaigns, device performance, and system health.
+
+### Location
+
+**Backend:** `/server/src/api/analytics.ts`
+
+### Available Metrics
+
+**Dashboard Summary** (`analytics.getDashboardSummary`):
+- Today's message stats (total, sent, delivered, failed)
+- Delivery rate percentage
+- Active device count
+- Active campaign count
+- Queued message count
+- System health status (healthy/degraded/critical)
+
+**Delivery Rate Trend** (`analytics.getDeliveryRateTrend`):
+- Hourly breakdown for last 24 hours
+- Sent, delivered, failed counts per hour
+- Delivery rate percentage per hour
+
+**Device Performance** (`analytics.getDevicePerformance`):
+- Per-device message statistics
+- Total messages, sent, delivered, failed
+- Delivery rate per device
+- Last seen timestamp
+
+**Error Breakdown** (`analytics.getErrorBreakdown`):
+- Total error count and rate
+- Top error reasons aggregated
+- Errors grouped by device
+
+**Throughput Metrics** (`analytics.getThroughputMetrics`):
+- Per-minute message count for last hour
+- Useful for capacity planning
+
+**Campaign Performance** (`analytics.getCampaignPerformance`):
+- Paginated campaign list with statistics
+- Total recipients, sent, delivered, failed
+- Delivery rate per campaign
+
+**Active Campaigns** (`analytics.getActiveCampaigns`):
+- Currently running campaigns (pending/processing status)
+
+**Recent Activity** (`analytics.getRecentActivity`):
+- Recent messages with status
+- Associated campaign information
+- Delivery/timestamp details
+
+### tRPC Endpoints
+
+```typescript
+analytics.getDashboardSummary()
+analytics.getDeliveryRateTrend()
+analytics.getDevicePerformance()
+analytics.getErrorBreakdown({ timeRange?: { startDate, endDate } })
+analytics.getThroughputMetrics()
+analytics.getCampaignPerformance({ limit, offset })
+analytics.getActiveCampaigns()
+analytics.getRecentActivity({ limit })
+```
+
+---
+
+## Frontend Patterns
+
+### Infinite Scroll with Intersection Observer
+
+Several list pages (locks, messages) use infinite scroll for performance:
+
+**Pattern Implementation:**
+```typescript
+// Use InfiniteQuery from TanStack Query
+const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+  queryKey: ['resource', 'list'],
+  queryFn: async ({ pageParam = 0 }) => {
+    const result = await fetch(`/trpc/resource.list?input=${JSON.stringify({
+      limit: 50,
+      offset: pageParam,
+    })}`)
+    return result.json()
+  },
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => {
+    if (lastPage.length < 50) return undefined
+    return lastPage.length
+  },
+  maxPages: 5, // Limit total pages
+})
+
+// Intersection Observer for auto-loading
+const observerTarget = useRef<HTMLDivElement>(null)
+useEffect(() => {
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage()
+      }
+    },
+    { threshold: 0.1 }
+  )
+  const current = observerTarget.current
+  if (current) observer.observe(current)
+  return () => current && observer.unobserve(current)
+}, [hasNextPage, isFetchingNextPage, fetchNextPage])
+
+// Flatten pages for rendering
+const items = data?.pages.flat() || []
+```
+
+**Key Files Using This Pattern:**
+- `client/app/dashboard/locks/page.tsx`
+- `client/app/dashboard/messagelist/page.tsx`
+
+### Debounced Input with Auto-Refresh
+
+For pages that need to refresh data periodically:
+
+```typescript
+const [data, setData] = useState(null)
+const [lastUpdate, setLastUpdate] = useState(Date.now())
+
+// Refresh every 5 seconds
+useEffect(() => {
+  const interval = setInterval(() => {
+    refetch()
+    setLastUpdate(Date.now())
+  }, 5000)
+  return () => clearInterval(interval)
+}, [])
+```
+
+### Access URL
+
+**https://syncmesh-datacore.shop/dashboard/bulk-sms**
+
+### Usage Example
+
+```typescript
+// Create campaign via tRPC
+const result = await trpc.bulkSms.createCampaign.mutate({
+  name: "Promo Campaign",
+  message: "Hello {name}, your order is ready!",
+  recipients: ["+1234567890", "+9876543210"],
+  devicePool: ["device-1", "device-2"],
+  strategy: "load-balanced",
+  simSlot: "both"
+})
+
+// Get campaign status
+const status = await trpc.bulkSms.getCampaignStatus.query({
+  campaignId: "campaign-id"
+})
+// Returns: { campaign, stats, recentMessages }
+```

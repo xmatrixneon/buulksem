@@ -38,7 +38,7 @@ export default function MessagesGridWithTRPC() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null)
 
-  // Infinite scroll query for messages
+  // Infinite scroll query for messages using tRPC
   const {
     data: infiniteData,
     isLoading,
@@ -48,7 +48,7 @@ export default function MessagesGridWithTRPC() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['messages'],
+    queryKey: ['messages', 'list'],
     queryFn: async ({ pageParam = 0 }) => {
       const result = await fetch(`/trpc/messages.list?input=${encodeURIComponent(JSON.stringify({
         limit: 50,
@@ -61,8 +61,11 @@ export default function MessagesGridWithTRPC() {
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < 50) return undefined
-      return allPages.length * 50
+      return allPages.flat().length
     },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   // Flatten all pages

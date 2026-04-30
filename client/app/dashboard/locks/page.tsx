@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useQuery, useMutation } from "@tanstack/react-query"
+import { useState, useRef, useEffect } from "react"
+import { useMutation, useQuery, useInfiniteQuery } from "@tanstack/react-query"
 import { useTRPC } from "@/lib/trpc/client"
 import { Button } from "@/components/ui/button"
 import {
@@ -29,6 +29,8 @@ interface Lock {
   number: number
   country: string
   service: string
+  serviceid: string
+  countryid: string
   locked: boolean
   createdAt?: Date
   updatedAt?: Date
@@ -38,18 +40,60 @@ export default function LocksListWithTRPC() {
   const trpc = useTRPC()
 
   const [selectedService, setSelectedService] = useState<string>("All")
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 10
 
-  // tRPC query for fetching locks
+  // Use tRPC infiniteQueryOptions with TanStack Query's useInfiniteQuery
   const {
-    data: locks = [],
+    data,
     isLoading,
     refetch,
-  } = useQuery({
-    ...trpc.locks.list.queryOptions(),
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    ...(trpc.locks.list as any).infiniteQueryOptions(
+      {
+        service: selectedService === "All" ? undefined : selectedService,
+        limit: 50,
+      },
+      {
+        getNextPageParam: (lastPage: any, allPages: any) => {
+          if (!lastPage || lastPage.length < 50) return undefined
+          return allPages.flat().length
+        },
+      }
+    ),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   })
+
+  // Flatten pages
+  const locks = data?.pages.flat() || []
+
+  // Intersection Observer for infinite scroll
+  const observerTarget = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage()
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = observerTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget)
+      }
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   // Unlock mutation
   const unlockMutation = useMutation({
@@ -87,20 +131,16 @@ export default function LocksListWithTRPC() {
     await unlockAllMutation.mutateAsync({ serviceid: selectedService })
   }
 
-  // Filter locks
-  const filteredLocks = locks.filter((lock: any) =>
-    selectedService === "All" || lock.service === selectedService
-  )
+  // Fetch all services for the filter dropdown
+  const { data: allServices } = useQuery({
+    ...trpc.services.all.queryOptions(),
+    refetchOnWindowFocus: false,
+  })
 
-  // Get unique services
-  const services = ["All", ...Array.from(new Set(locks.map((lock: any) => lock.service)))]
-
-  // Pagination
-  const totalPages = Math.ceil(filteredLocks.length / itemsPerPage)
-  const paginatedLocks = filteredLocks.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
+  const services = ["All", ...(allServices?.map((s: any) => ({
+    id: s.id,
+    name: s.name
+  })) || [])]
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -132,8 +172,8 @@ export default function LocksListWithTRPC() {
           </SelectTrigger>
           <SelectContent>
             {services.map((service) => (
-              <SelectItem key={service} value={service}>
-                {service}
+              <SelectItem key={typeof service === 'string' ? service : service.id} value={typeof service === 'string' ? service : service.id}>
+                {typeof service === 'string' ? service : service.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -182,14 +222,14 @@ export default function LocksListWithTRPC() {
                       <div className="animate-pulse text-muted-foreground">Loading locks...</div>
                     </TableCell>
                   </TableRow>
-                ) : paginatedLocks.length === 0 ? (
+                ) : locks.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8">
                       <div className="text-muted-foreground">No locks found</div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedLocks.map((lock: any) => (
+                  locks.map((lock: any) => (
                     <TableRow key={lock._id}>
                       <TableCell className="font-medium">{lock.number}</TableCell>
                       <TableCell>{lock.country || "N/A"}</TableCell>
@@ -213,7 +253,14 @@ export default function LocksListWithTRPC() {
                       </TableCell>
                       <TableCell>
                         {lock.createdAt
-                          ? new Date(lock.createdAt).toLocaleDateString()
+                          ? new Date(lock.createdAt).toLocaleString('en-IN', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: false
+                            })
                           : "Unknown"}
                       </TableCell>
                       <TableCell className="text-right">
@@ -244,32 +291,26 @@ export default function LocksListWithTRPC() {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
-      {!isLoading && filteredLocks.length > 0 && totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {Math.min(filteredLocks.length, (currentPage - 1) * itemsPerPage + 1)}-
-            {Math.min(currentPage * itemsPerPage, filteredLocks.length)} of{" "}
-            {filteredLocks.length} locks
+      {/* Intersection Observer Target */}
+      <div ref={observerTarget} className="h-1" />
+
+      {/* Loading indicator */}
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-4">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <span>Loading more locks...</span>
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-              disabled={currentPage === totalPages}
-            >
-              Next
-            </Button>
-          </div>
+        </div>
+      )}
+
+      {/* Result Count */}
+      {!isLoading && locks.length > 0 && (
+        <div className="text-center py-4 text-sm text-muted-foreground">
+          {hasNextPage
+            ? `Showing ${locks.length} locks (scroll for more...)`
+            : `Showing all ${locks.length} locks`
+          }
         </div>
       )}
     </div>

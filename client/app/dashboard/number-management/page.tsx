@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
+import { useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
 import { Activity, RefreshCw, Shield, Signal, Phone, CheckCircle2, XCircle, AlertTriangle, Search } from 'lucide-react';
 import {
@@ -67,36 +67,33 @@ export default function NumberManagement() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Infinite scroll query for numbers
+  // Use tRPC infiniteQueryOptions with TanStack Query's useInfiniteQuery
   const {
-    data: infiniteData,
+    data,
     isLoading,
     refetch,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['numbers', filter],
-    queryFn: async ({ pageParam = 1 }) => {
-      const result = await fetch(`/trpc/numbers.quality?input=${encodeURIComponent(JSON.stringify({
-        filter,
-        page: pageParam,
-        limit: 50,
-      }))}`)
-      if (!result.ok) throw new Error('Failed to fetch')
-      const data = await result.json()
-      return data.result.data.json
-    },
-    initialPageParam: 1,
-    getNextPageParam: (lastPage, allPages) => {
-      if (!lastPage?.data || lastPage.data.length < 50) return undefined
-      return allPages.length + 1
-    },
-  })
+    ...(trpc.numbers.quality as any).infiniteQueryOptions(
+      { filter },
+      {
+        getNextPageParam: (lastPage: any, allPages: any) => {
+          if (!lastPage?.data || lastPage.data.length < 50) return undefined
+          return allPages.length + 1
+        },
+        initialCursor: 1,
+      }
+    ),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
 
   // Flatten pages
-  const numbers = infiniteData?.pages.flatMap(p => p?.data || []) || []
-  const stats = infiniteData?.pages?.[0]?.stats || {
+  const numbers = data?.pages.flatMap((p: any) => p?.data || []) || []
+  const stats = (data?.pages?.[0] as any)?.stats || {
     totalCount: 0,
     activeCount: 0,
     suspendedCount: 0,
@@ -151,7 +148,7 @@ export default function NumberManagement() {
     if (selectedNumbers.size === filteredNumbers.length) {
       setSelectedNumbers(new Set());
     } else {
-      setSelectedNumbers(new Set(filteredNumbers.map(n => n.number)));
+      setSelectedNumbers(new Set(filteredNumbers.map((n: any) => n.number)));
     }
   };
 

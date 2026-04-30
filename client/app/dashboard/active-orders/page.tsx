@@ -51,45 +51,35 @@ export default function ActiveOrdersPageWithTRPC() {
     refetchOnWindowFocus: false,
   })
 
-  // Infinite scroll with best practices from Context7
+  // Use tRPC infiniteQueryOptions with TanStack Query's useInfiniteQuery
   const {
-    data: infiniteData,
+    data,
     isLoading,
     refetch,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['orders', 'active'],
-    queryFn: async ({ pageParam = 0 }) => {
-      const result = await fetch(`/trpc/orders.list?input=${encodeURIComponent(JSON.stringify({
-        limit: 50, // Reasonable page size
-        offset: pageParam,
-      }))}`)
-      if (!result.ok) throw new Error('Failed to fetch')
-      const data = await result.json()
-      const orders = data.result.data.json
-
-      // Filter for active orders
-      const activeOrders = orders.filter((o: any) => o.active)
-      return activeOrders
-    },
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) => {
-      // Context7 best practice: return undefined when no more data
-      if (lastPage.length < 50) return undefined
-      // Continue fetching next page
-      return lastPage.length // Could use cursor/offset
-    },
-    maxPages: 3, // Context7: limit stored pages for performance
+    ...(trpc.orders.list as any).infiniteQueryOptions(
+      { active: true },
+      {
+        getNextPageParam: (lastPage: any) => {
+          if (!lastPage || lastPage.length < 50) return undefined
+          return lastPage.length
+        },
+      }
+    ),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
-  // Flatten pages
-  const activeOrdersList = infiniteData?.pages.flat() || []
+  // Flatten pages from tRPC infinite query
+  const activeOrdersList = data?.pages.flat() || []
 
   // Stats cards - real data from overview API
-  const totalOrders = overviewData?.todayOrders || 0 // Today's total orders
-  const activeOrders = overviewData?.activeOrders || 0 // Real active orders count from database
+  const totalOrders = overviewData?.todayOrders || 0
+  const activeOrders = overviewData?.activeOrders || 0
 
   const filteredOrders = activeOrdersList.filter((order: any) => {
     const matchesSearch =
@@ -100,7 +90,7 @@ export default function ActiveOrdersPageWithTRPC() {
     return matchesSearch
   })
 
-  // Intersection Observer for infinite scroll (best practice from Context7)
+  // Intersection Observer for infinite scroll
   const observerTarget = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

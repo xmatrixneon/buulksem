@@ -7,7 +7,8 @@ module.exports = {
       exec_mode: 'cluster',
       env: {
         NODE_ENV: 'production',
-        PORT: 4000
+        PORT: 4000,
+        FCM_SERVICE_ACCOUNT_KEY: '/var/www/manager/buulksem/server/service-account-key.json'
       },
       error_file: './logs/app-error.log',
       out_file: './logs/app-out.log',
@@ -25,7 +26,8 @@ module.exports = {
       exec_mode: 'cluster',
       env: {
         BULLMQ_STATUS_ENABLED: 'true',
-        BULLMQ_CONCURRENCY_DEVICE_STATUS: '2'
+        BULLMQ_CONCURRENCY_DEVICE_STATUS: '2',
+        FCM_SERVICE_ACCOUNT_KEY: '/var/www/manager/buulksem/server/service-account-key.json'
       },
       error_file: './logs/status-error.log',
       out_file: './logs/status-out.log'
@@ -37,7 +39,8 @@ module.exports = {
       exec_mode: 'cluster',
       env: {
         BULLMQ_FETCH_ENABLED: 'true',
-        BULLMQ_CONCURRENCY_SMS_FETCH: '2'
+        BULLMQ_CONCURRENCY_SMS_FETCH: '2',
+        FCM_SERVICE_ACCOUNT_KEY: '/var/www/manager/buulksem/server/service-account-key.json'
       },
       error_file: './logs/fetch-error.log',
       out_file: './logs/fetch-out.log'
@@ -46,7 +49,8 @@ module.exports = {
       name: 'worker:keepalive',
       script: 'dist/workers/keepalive-worker.js',
       env: {
-        BULLMQ_KEEPALIVE_ENABLED: 'true'
+        BULLMQ_KEEPALIVE_ENABLED: 'true',
+        FCM_SERVICE_ACCOUNT_KEY: '/var/www/manager/buulksem/server/service-account-key.json'
       },
       error_file: './logs/keepalive-error.log',
       out_file: './logs/keepalive-out.log'
@@ -58,7 +62,8 @@ module.exports = {
       exec_mode: 'cluster',
       env: {
         BULLMQ_WAKEUP_ENABLED: 'true',
-        BULLMQ_CONCURRENCY_DEVICE_WAKEUP: '4'
+        BULLMQ_CONCURRENCY_DEVICE_WAKEUP: '4',
+        FCM_SERVICE_ACCOUNT_KEY: '/var/www/manager/buulksem/server/service-account-key.json'
       },
       error_file: './logs/wakeup-error.log',
       out_file: './logs/wakeup-out.log'
@@ -68,7 +73,8 @@ module.exports = {
       script: 'dist/workers/suspend-worker.js',
       env: {
         BULLMQ_SUSPEND_ENABLED: 'true',
-        SMS_AUTO_SUSPEND_ENABLED: 'true'
+        SMS_AUTO_SUSPEND_ENABLED: 'true',
+        FCM_SERVICE_ACCOUNT_KEY: '/var/www/manager/buulksem/server/service-account-key.json'
       },
       error_file: './logs/suspend-error.log',
       out_file: './logs/suspend-out.log'
@@ -78,7 +84,8 @@ module.exports = {
       script: 'dist/workers/cleanup-worker.js',
       env: {
         BULLMQ_CLEANUP_ENABLED: 'true',
-        MESSAGE_CLEANUP_ENABLED: 'true'
+        MESSAGE_CLEANUP_ENABLED: 'true',
+        FCM_SERVICE_ACCOUNT_KEY: '/var/www/manager/buulksem/server/service-account-key.json'
       },
       error_file: './logs/cleanup-error.log',
       out_file: './logs/cleanup-out.log'

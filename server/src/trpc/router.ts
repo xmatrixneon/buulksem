@@ -265,7 +265,8 @@ export const appRouter = router({
         suspended: z.boolean().optional(),
         countryid: z.string().optional(),
         limit: z.number().default(50),
-        offset: z.number().default(0)
+        offset: z.number().default(0),
+        search: z.string().optional(),
       }).optional())
       .query(async ({ input }) => {
         const params = input || { limit: 50, offset: 0 }
@@ -274,6 +275,9 @@ export const appRouter = router({
         if (params.active !== undefined) where.active = params.active
         if (params.suspended !== undefined) where.suspended = params.suspended
         if (params.countryid) where.countryid = params.countryid
+        if (params.search) {
+          where.number = { contains: params.search }
+        }
 
         return await prisma.numbers.findMany({
           where,
@@ -527,11 +531,22 @@ export const appRouter = router({
       .input(z.object({
         active: z.boolean().optional(),
         limit: z.number().default(50),
-        offset: z.number().default(0)
-      }).optional())
+        offset: z.number().default(0),
+        search: z.string().optional(),
+      }))
       .query(async ({ input }) => {
-        const params = input || { limit: 50, offset: 0 }
-        const where = params.active !== undefined ? { active: params.active } : {}
+        const params = input
+        const where: any = {}
+
+        if (params.active !== undefined) {
+          where.active = params.active
+        }
+
+        if (params.search) {
+          where.OR = [
+            { number: { contains: params.search } },
+          ]
+        }
 
         const orders = await prisma.orders.findMany({
           where,
@@ -898,9 +913,24 @@ export const appRouter = router({
 
   locks: router({
     list: protectedProcedure
-      .query(async () => {
+      .input(z.object({
+        limit: z.number().optional().default(50),
+        offset: z.number().optional().default(0),
+        service: z.string().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        const { limit = 50, offset = 0, service } = input || {}
+        const where: any = {}
+
+        if (service && service !== 'All') {
+          where.serviceid = service
+        }
+
         const locks = await prisma.lock.findMany({
-          orderBy: { createdAt: 'desc' }
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset
         })
 
         // Populate country and service data
@@ -912,8 +942,8 @@ export const appRouter = router({
             ])
 
             return {
-              _id: lock.id.toString(),
-              id: lock.id.toString(),
+              _id: lock.id?.toString() || '',
+              id: lock.id?.toString() || '',
               number: lock.number,
               country: country?.name || 'Unknown',
               service: service?.name || 'Unknown',

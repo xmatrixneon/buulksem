@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
 import { formatDistanceToNow } from "date-fns";
 import { Lock, Unlock, Trash2, Signal, Search, Phone, RefreshCw, BarChart3, Wifi, Globe, Hash } from "lucide-react";
@@ -67,39 +67,33 @@ export default function NumbersGridWithTRPC() {
     refetchOnWindowFocus: false,
   });
 
-  // Infinite scroll with Context7 best practices
+  // Use tRPC infiniteQueryOptions with TanStack Query's useInfiniteQuery
   const {
-    data: infiniteData,
+    data,
     isLoading,
-    isRefetching,
     refetch,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['numbers'],
-    queryFn: async ({ pageParam = 0 }) => {
-      const result = await fetch(`/trpc/numbers.list?input=${encodeURIComponent(JSON.stringify({
-        limit: 50, // Reasonable page size
-        offset: pageParam,
-      }))}`)
-      if (!result.ok) throw new Error('Failed to fetch')
-      const data = await result.json()
-      return data.result.data.json
-    },
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
-      // Context7: return undefined when no more data
-      if (!lastPage || lastPage.length < 50) return undefined
-      return allPages.length * 50
-    },
-    maxPages: 5, // Context7: limit stored pages for performance
+    ...(trpc.numbers.list as any).infiniteQueryOptions(
+      { limit: 50 },
+      {
+        getNextPageParam: (lastPage: any, allPages: any) => {
+          if (!lastPage || lastPage.length < 50) return undefined
+          return allPages.flat().length
+        },
+      }
+    ),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   // Flatten pages - API returns array directly
-  const numbers = infiniteData?.pages.flat() || [];
+  const numbers = data?.pages.flat() || [];
 
-  // Intersection Observer for infinite scroll (Context7 best practice)
+  // Intersection Observer for infinite scroll
   const observerTarget = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -380,7 +374,7 @@ export default function NumbersGridWithTRPC() {
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. This will permanently delete the number{" "}
-              {numberToDelete && numbers.find((n: any) => n._id === numberToDelete)?.number}.
+              {numberToDelete && (numbers.find((n: any) => n._id === numberToDelete) as any)?.number}.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

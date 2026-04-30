@@ -123,7 +123,7 @@ export function DeviceListWithTRPC() {
   )
   const totalDeviceCount = overviewData?.totalDevices ?? 0
 
-  // Infinite scroll query with best practices
+  // Infinite scroll query using tRPC
   const {
     data: infiniteData,
     isLoading: devicesLoading,
@@ -133,7 +133,7 @@ export function DeviceListWithTRPC() {
     isFetchingNextPage,
     refetch: refetchDevices,
   } = useInfiniteQuery({
-    queryKey: ['devices', statusFilter],
+    queryKey: ['devices', 'list', { status: statusFilter }],
     queryFn: async ({ pageParam = 0 }) => {
       const result = await fetch(`/trpc/device.list?input=${encodeURIComponent(JSON.stringify({
         status: statusFilter,
@@ -147,8 +147,11 @@ export function DeviceListWithTRPC() {
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < 30) return undefined
-      return allPages.length * 30
+      return allPages.flat().length
     },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   // Flatten all pages into single array
