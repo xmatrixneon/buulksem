@@ -56,6 +56,7 @@ interface Order {
   createdAt: Date
   isused: boolean
   active: boolean
+  failureReason?: string
   message?: string[]
   country?: Country
   service?: Service
@@ -114,6 +115,16 @@ export default function OrdersPageWithTRPC() {
     if (!order.active) {
       if (order.isused) {
         return <Badge className="bg-green-600 hover:bg-green-700">Success</Badge>
+      }
+      // Check failureReason for more specific status
+      if (order.failureReason === 'user_cancelled' || order.failureReason === 'cancelled') {
+        return <Badge className="bg-orange-600 hover:bg-orange-700">Cancelled</Badge>
+      }
+      if (order.failureReason === 'expired_no_recharge') {
+        return <Badge variant="destructive">No SMS</Badge>
+      }
+      if (order.failureReason === 'expired_no_sms') {
+        return <Badge variant="destructive">Timeout</Badge>
       }
       return <Badge variant="destructive">Expired</Badge>
     }
@@ -199,6 +210,7 @@ export default function OrdersPageWithTRPC() {
                   <TableHead>Country</TableHead>
                   <TableHead>Service</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Messages</TableHead>
                   <TableHead>Created At</TableHead>
                 </TableRow>
               </TableHeader>
@@ -245,6 +257,21 @@ export default function OrdersPageWithTRPC() {
                       </TableCell>
                       <TableCell>{getOrderStatus(order)}</TableCell>
                       <TableCell>
+                        {order.message && order.message.length > 0 ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSelectedMessages(order.message)}
+                            className="h-8"
+                          >
+                            <MessageSquare className="h-3 w-3 mr-1" />
+                            {order.message.length} {order.message.length === 1 ? 'SMS' : 'SMSes'}
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">No messages</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {order.createdAt ? formatIST(new Date(order.createdAt)) : "N/A"}
                       </TableCell>
                     </TableRow>
@@ -262,11 +289,20 @@ export default function OrdersPageWithTRPC() {
           <DialogHeader>
             <DialogTitle>Order Messages</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {selectedMessages && selectedMessages.length > 0 ? (
               selectedMessages.map((msg, index) => (
-                <div key={index} className="p-3 bg-muted rounded">
-                  <p className="text-sm">{msg}</p>
+                <div key={index} className="p-4 bg-muted rounded-lg border">
+                  <div className="flex items-start justify-between mb-2">
+                    <span className="text-xs text-muted-foreground font-medium">SMS #{index + 1}</span>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(msg)}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <p className="text-sm font-mono break-all">{msg}</p>
                 </div>
               ))
             ) : (

@@ -1011,7 +1011,7 @@ export const appRouter = router({
       const startOfDay = new Date(now.setHours(0, 0, 0, 0))
 
       // Get basic stats
-      const [totalNumbers, activeNumbers, suspendedNumbers, todayOrdersData, totalDevices, allDevices] = await Promise.all([
+      const [totalNumbers, activeNumbers, suspendedNumbers, todayOrdersData, totalDevices, allDevices, activeOrdersCount] = await Promise.all([
         prisma.numbers.count(),
         prisma.numbers.count({ where: { active: true, suspended: false } }),
         prisma.numbers.count({ where: { suspended: true } }),
@@ -1022,7 +1022,8 @@ export const appRouter = router({
           select: { isused: true, active: true }
         }),
         prisma.device.count(),
-        prisma.device.findMany({ select: { deviceId: true, lastSeen: true, status: true } })
+        prisma.device.findMany({ select: { deviceId: true, lastSeen: true, status: true } }),
+        prisma.orders.count({ where: { active: true } }) // Real active orders count
       ])
 
       // Calculate today's order statistics
@@ -1055,6 +1056,7 @@ export const appRouter = router({
         successRate,
         totalDevices,
         activeDevices,
+        activeOrders: activeOrdersCount,
         lastDeviceSync: syncCron?.lastRun || null,
         lastOtpFetch: fetchCron?.lastRun || null,
         istTime: istDate.toISOString()
@@ -1394,6 +1396,26 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const { generateSmsTemplate } = await import('../lib/deepseek')
         return generateSmsTemplate(input.smsText)
+      }),
+
+    improveTemplateWithChat: publicProcedure
+      .input(z.object({
+        originalSms: z.string().min(1),
+        previousTemplate: z.string().min(1),
+        userFeedback: z.string().min(1),
+        conversationHistory: z.array(z.object({
+          role: z.enum(['system', 'user', 'assistant']),
+          content: z.string()
+        })).optional()
+      }))
+      .query(async ({ input }) => {
+        const { improveTemplateWithChat } = await import('../lib/deepseek')
+        return improveTemplateWithChat(
+          input.originalSms,
+          input.previousTemplate,
+          input.userFeedback,
+          input.conversationHistory
+        )
       })
   })
 })

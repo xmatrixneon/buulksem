@@ -1,26 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, MessageSquare, Code, Copy, CheckCircle, Info } from "lucide-react";
+import { Loader2, MessageSquare, Code, Copy, CheckCircle, Info, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+
+type ChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
 
 export default function SmsTemplateGenerator() {
   const trpc = useTRPC()
   const [smsText, setSmsText] = useState('');
   const [debouncedSmsText, setDebouncedSmsText] = useState('');
+  const [showImprove, setShowImprove] = useState(false);
+  const [userFeedback, setUserFeedback] = useState('');
+  const [conversationHistory, setConversationHistory] = useState<ChatMessage[]>([]);
 
-  // Debounce input
-  useState(() => {
+  // Proper debounce implementation
+  useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSmsText(smsText);
-    }, 500);
+      if (smsText.trim()) {
+        setDebouncedSmsText(smsText.trim());
+      }
+    }, 800); // 800ms delay
     return () => clearTimeout(timer);
-  });
+  }, [smsText]);
 
   // tRPC query for generating template
   const { data, isLoading, refetch } = useQuery({
@@ -33,6 +43,23 @@ export default function SmsTemplateGenerator() {
 
   const template = data?.template || ''
   const extractedOtp = data?.otp || ''
+
+  // Improve template mutation
+  const { mutate: improveTemplate, isLoading: isImproving } = (trpc.utils as any).improveTemplateWithChat.useMutation({
+    onSuccess: (result: any) => {
+      if (result.success && result.template) {
+        setSmsText(result.template); // Update to show improved template
+        setConversationHistory(result.conversation || []);
+        toast.success(`✅ Template improved! OTP: ${result.otp || 'N/A'}`);
+      } else {
+        toast.error(result.message || 'Failed to improve template');
+      }
+      setUserFeedback('');
+    },
+    onError: (error: any) => {
+      toast.error('Error improving template: ' + (error.message || 'Unknown error'));
+    }
+  });
 
   const exampleMessages = [
     {
@@ -60,18 +87,27 @@ export default function SmsTemplateGenerator() {
       return;
     }
 
+    // Force immediate generation
     setDebouncedSmsText(smsText.trim());
-
-    if (extractedOtp) {
-      toast.success(`✅ Successfully extracted OTP: ${extractedOtp}`);
-    } else {
-      toast.success('Template generated successfully!');
-    }
   };
 
   const handleCopyTemplate = () => {
     navigator.clipboard.writeText(template);
     toast.success("Template copied to clipboard!");
+  };
+
+  const handleImproveTemplate = () => {
+    if (!userFeedback.trim()) {
+      toast.error('Please enter your feedback');
+      return;
+    }
+
+    improveTemplate({
+      originalSms: smsText,
+      previousTemplate: template,
+      userFeedback: userFeedback,
+      conversationHistory
+    });
   };
 
   return (
@@ -153,6 +189,9 @@ export default function SmsTemplateGenerator() {
             <CardTitle className="flex items-center gap-2">
               <Code className="h-5 w-5" />
               Generated Template
+              {extractedOtp && (
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              )}
             </CardTitle>
             <CardDescription>
               AI-generated template compatible with your regex builder
@@ -161,20 +200,72 @@ export default function SmsTemplateGenerator() {
           <CardContent className="space-y-4">
             {template ? (
               <>
+                {extractedOtp && (
+                  <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-md">
+                    <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    <span className="text-sm">
+                      OTP extracted: <code className="font-mono font-semibold">{extractedOtp}</code>
+                    </span>
+                  </div>
+                )}
                 <div className="p-3 bg-muted rounded-md border">
                   <code className="text-sm whitespace-pre-wrap break-words">
                     {template}
                   </code>
                 </div>
-                <Button
-                  onClick={handleCopyTemplate}
-                  variant="outline"
-                  className="w-full"
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copy Template
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleCopyTemplate}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy
+                  </Button>
+                  <Button
+                    onClick={() => setShowImprove(!showImprove)}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Improve
+                  </Button>
+                </div>
+
+                {/* Improve Section */}
+                {showImprove && (
+                  <div className="space-y-3 pt-3 border-t">
+                    <p className="text-sm font-medium">Not perfect? Ask AI to improve:</p>
+                    <Textarea
+                      placeholder="E.g., 'Make the template more flexible', 'Add support for 6-digit OTP', 'The OTP is not being captured correctly'"
+                      value={userFeedback}
+                      onChange={(e) => setUserFeedback(e.target.value)}
+                      rows={3}
+                      className="resize-none text-sm"
+                    />
+                    <Button
+                      onClick={handleImproveTemplate}
+                      disabled={isImproving || !userFeedback.trim()}
+                      className="w-full"
+                      size="sm"
+                    >
+                      {isImproving ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Improving...
+                        </>
+                      ) : (
+                        'Send Feedback'
+                      )}
+                    </Button>
+                  </div>
+                )}
               </>
+            ) : isLoading ? (
+              <div className="text-muted-foreground text-sm text-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                Generating template...
+              </div>
             ) : (
               <div className="text-muted-foreground text-sm text-center py-8">
                 Template will appear here after generation
