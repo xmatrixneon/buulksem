@@ -5,6 +5,10 @@
  * Helps maintain WebSocket connections and detect dead connections.
  */
 
+// Load environment variables first
+import dotenv from 'dotenv'
+dotenv.config({ path: '/var/www/manager/buulksem/server/.env' })
+
 import { Worker } from 'bullmq'
 import { getRedis } from '../queues/redis'
 import { keepaliveQueue, KEEPALIVE_INTERVAL } from '../queues/device-keepalive'

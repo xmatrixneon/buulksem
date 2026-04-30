@@ -3,6 +3,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { TRPCReactProvider } from "@/lib/trpc/client"
+import { GlobalErrorHandler } from "@/components/error-handler"
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,7 @@ export default function RootLayout({
         {/* Meta viewport is handled by Next.js viewport export */}
       </head>
       <body >
+        <GlobalErrorHandler />
         <TRPCReactProvider>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
             {children}

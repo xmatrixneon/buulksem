@@ -73,7 +73,7 @@ export default function OrdersPageWithTRPC() {
 
   // tRPC query for fetching activation data
   const {
-    data: orders = [],
+    data: orders = [] as any[],
     isLoading,
     refetch
   } = useQuery({
@@ -86,7 +86,7 @@ export default function OrdersPageWithTRPC() {
   })
 
   // Filter orders
-  const filteredOrders = orders.filter((order: any) => {
+  const filteredOrders = (orders as any[]).filter((order: any) => {
     const matchesSearch =
       !search ||
       order.number?.toString().includes(search) ||

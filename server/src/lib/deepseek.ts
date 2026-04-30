@@ -171,7 +171,9 @@ SMS to convert: "${smsText}"
 Return ONLY the template string, nothing else.`
 
     try {
+      const startTime = Date.now()
       const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        signal: AbortSignal.timeout(15000), // 15 second timeout
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -190,9 +192,12 @@ Return ONLY the template string, nothing else.`
             }
           ],
           temperature: 0.3,
-          max_tokens: 8000
+          max_tokens: 500  // Reduced from 8000 - templates are short
         })
       })
+
+      const timing = Date.now() - startTime
+      console.log(`[DeepSeek] API response time: ${timing}ms`)
 
       if (!response.ok) {
         const errorText = await response.text()

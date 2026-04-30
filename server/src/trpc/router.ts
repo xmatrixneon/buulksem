@@ -1408,7 +1408,7 @@ export const appRouter = router({
           content: z.string()
         })).optional()
       }))
-      .query(async ({ input }) => {
+      .mutation(async ({ input }) => {
         const { improveTemplateWithChat } = await import('../lib/deepseek')
         return improveTemplateWithChat(
           input.originalSms,

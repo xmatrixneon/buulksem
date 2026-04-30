@@ -5,9 +5,12 @@ import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { createTRPCContext } from '@trpc/tanstack-react-query';
 import { useState } from 'react';
 import superjson from 'superjson';
+// @ts-ignore - Cross-project type import
 import type { AppRouter } from './types';
 import { authClient } from '../auth-client';
+import { logTRPCError } from '../error-logger';
 
+// @ts-ignore
 export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
 
 let browserQueryClient: QueryClient;
@@ -19,6 +22,10 @@ function getQueryClient() {
         queries: {
           staleTime: 1000 * 60 * 5, // 5 minutes
           refetchOnWindowFocus: false,
+          retry: 1,
+        },
+        mutations: {
+          retry: 1,
         },
       },
     });
@@ -29,6 +36,10 @@ function getQueryClient() {
         queries: {
           staleTime: 1000 * 60 * 5,
           refetchOnWindowFocus: false,
+          retry: 1,
+        },
+        mutations: {
+          retry: 1,
         },
       },
     });
@@ -62,6 +73,32 @@ export function TRPCReactProvider(
               headers: {
                 ...options?.headers,
               },
+            })
+            .then(async (response) => {
+              // Log tRPC errors for debugging
+              if (!response.ok) {
+                const clone = response.clone();
+                try {
+                  const errorData = await clone.json();
+                  logTRPCError(
+                    errorData.error || { message: response.statusText, code: response.status.toString() },
+                    url.toString()
+                  );
+                } catch {
+                  logTRPCError(
+                    { message: response.statusText, code: response.status.toString() },
+                    url.toString()
+                  );
+                }
+              }
+              return response;
+            })
+            .catch((error) => {
+              logTRPCError(
+                { message: error.message || 'Network error', code: 'NETWORK_ERROR' },
+                url.toString()
+              );
+              throw error;
             });
           },
         }),

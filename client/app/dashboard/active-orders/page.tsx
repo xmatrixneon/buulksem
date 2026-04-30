@@ -51,7 +51,7 @@ export default function ActiveOrdersPageWithTRPC() {
 
   // tRPC query for fetching orders (all orders for proper stats)
   const {
-    data: orders = [],
+    data: orders = [] as any[],
     isLoading,
     refetch,
   } = useQuery({
@@ -63,7 +63,7 @@ export default function ActiveOrdersPageWithTRPC() {
   })
 
   // Filter orders - show all active orders (including multi-use orders waiting for more SMS)
-  const activeOrdersList = orders.filter((order: any) => order.active)  // All active orders
+  const activeOrdersList = (orders as any[]).filter((order: any) => order.active)  // All active orders
 
   const filteredOrders = activeOrdersList.filter((order: any) => {
     const matchesSearch =
@@ -82,7 +82,7 @@ export default function ActiveOrdersPageWithTRPC() {
   )
 
   // Stats - Total orders (all), Active (waiting for OTP and still active)
-  const totalOrders = orders.length
+  const totalOrders = (orders as any[]).length
   const activeOrders = activeOrdersList.filter((o: any) => o.active).length
 
   const getStatusBadge = (order: Order) => {

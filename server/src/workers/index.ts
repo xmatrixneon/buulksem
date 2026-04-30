@@ -13,7 +13,23 @@
  * - SMS_AUTO_SUSPEND_ENABLED=false/true (inverted logic)
  */
 
-import "dotenv/config"
+import dotenv from "dotenv"
+import path from "path"
+import { fileURLToPath } from 'url'
+
+// Get absolute path to .env file for PM2 workers
+// Use __dirname (compiled path) or process.cwd() as fallback
+const envPath = process.env.NODE_ENV === 'production'
+  ? '/var/www/manager/buulksem/server/.env'
+  : path.resolve(process.cwd(), '.env')
+
+dotenv.config({ path: envPath })
+
+// Debug: log FCM key status
+if (!process.env.FCM_SERVICE_ACCOUNT_KEY) {
+  console.warn(`[Workers] FCM_SERVICE_ACCOUNT_KEY not found. Env path: ${envPath}, cwd: ${process.cwd()}`)
+}
+
 import { worker as wakeupWorker } from './wakeup-worker'
 import { worker as statusWorker } from './status-worker'
 import { worker as cleanupWorker } from './cleanup-worker'

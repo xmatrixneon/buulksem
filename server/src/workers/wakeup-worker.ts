@@ -5,6 +5,10 @@
  * Helps maintain device connectivity and real-time communication.
  */
 
+// Load environment variables first
+import dotenv from 'dotenv'
+dotenv.config({ path: '/var/www/manager/buulksem/server/.env' })
+
 import { Worker } from 'bullmq'
 import { getRedis } from '../queues/redis'
 import { wakeupQueue, WAKEUP_INTERVAL } from '../queues/device-wakeup'

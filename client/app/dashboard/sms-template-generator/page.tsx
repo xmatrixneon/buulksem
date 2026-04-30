@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,7 +28,7 @@ export default function SmsTemplateGenerator() {
       if (smsText.trim()) {
         setDebouncedSmsText(smsText.trim());
       }
-    }, 800); // 800ms delay
+    }, 500); // Reduced to 500ms for faster response
     return () => clearTimeout(timer);
   }, [smsText]);
 
@@ -45,7 +45,8 @@ export default function SmsTemplateGenerator() {
   const extractedOtp = data?.otp || ''
 
   // Improve template mutation
-  const { mutate: improveTemplate, isLoading: isImproving } = (trpc.utils as any).improveTemplateWithChat.useMutation({
+  const { mutate: improveTemplate, isPending: isImproving } = useMutation({
+    ...trpc.utils.improveTemplateWithChat.mutationOptions(),
     onSuccess: (result: any) => {
       if (result.success && result.template) {
         setSmsText(result.template); // Update to show improved template
@@ -262,9 +263,10 @@ export default function SmsTemplateGenerator() {
                 )}
               </>
             ) : isLoading ? (
-              <div className="text-muted-foreground text-sm text-center py-8">
+              <div className="text-muted-foreground text-sm text-center py-8 space-y-2">
                 <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                Generating template...
+                <p>AI is analyzing your SMS...</p>
+                <p className="text-xs">This takes 2-3 seconds using DeepSeek AI</p>
               </div>
             ) : (
               <div className="text-muted-foreground text-sm text-center py-8">
