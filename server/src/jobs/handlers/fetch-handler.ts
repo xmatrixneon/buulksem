@@ -255,8 +255,8 @@ export async function handleFetchJob(_data: any): Promise<FetchJobResult> {
       const ageMinutes = (now.getTime() - order.createdAt.getTime()) / (1000 * 60)
       const currentMessages = Array.isArray(order.message) ? (order.message as string[]) : []
 
-      // 1. Expire after 15 min
-      if (ageMinutes > 15) {
+      // 1. Expire after 20 min
+      if (ageMinutes > 20) {
         let failureReason: string
         let qualityImpact: number
 
