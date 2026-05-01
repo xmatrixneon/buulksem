@@ -270,8 +270,6 @@ export default function NumbersGridWithTRPC() {
           value={filter}
           onValueChange={(value: any) => {
             setFilter(value);
-            // Refetch with new filter immediately
-            refetch();
           }}
         >
           <SelectTrigger className="w-[180px]">
@@ -324,11 +322,11 @@ export default function NumbersGridWithTRPC() {
                           {n.countryid?.flag && (
                             <img
                               src={n.countryid.flag}
-                              alt={n.countryid.name}
-                              className="w-5 h-5 rounded-full"
+                              alt=""
+                              className="w-5 h-5 rounded-full object-cover flex-shrink-0"
                             />
                           )}
-                          <span>{n.countryid?.name || "Unknown"}</span>
+                          <span className="truncate">{n.countryid?.name || "Unknown"}</span>
                         </div>
                       </TableCell>
                       <TableCell>{n.operator || "Unknown"}</TableCell>
