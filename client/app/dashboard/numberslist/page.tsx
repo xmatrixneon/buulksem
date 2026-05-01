@@ -268,7 +268,11 @@ export default function NumbersGridWithTRPC() {
         </div>
         <Select
           value={filter}
-          onValueChange={(value: any) => setFilter(value)}
+          onValueChange={(value: any) => {
+            setFilter(value);
+            // Refetch with new filter immediately
+            refetch();
+          }}
         >
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Filter status" />
