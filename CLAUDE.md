@@ -168,7 +168,7 @@ cd sms-gateway
 │   │   └── schema.prisma     # Database schema
 │   └── ecosystem.config.cjs  # PM2 configuration
 │
-├── stubs/                    # Stubs API (port 3000)
+├── stubs/                    # Stubs API (port 5000)
 │   ├── src/
 │   │   ├── routes/
 │   │   │   └── orders.ts     # Order endpoints (getNumber, getStatus, setStatus)
@@ -389,23 +389,77 @@ Background jobs are processed via BullMQ with Redis:
 
 ---
 
-## Database Schema (Prisma + MongoDB)
+## Data Model
 
-### Core Models
+### Overview
 
-**Device** - Android gateway devices
-**Numbers** - Virtual phone numbers for OTP services
-**Orders** - OTP service orders
-**Message** - Received SMS messages
-**BulkCampaign/BulkMessage** - Bulk SMS campaigns
+The system uses **Prisma ORM with MongoDB**. All models use MongoDB ObjectId for primary keys (`@db.ObjectId`). Full schema definitions are in `server/prisma/schema.prisma`.
 
-### Supporting Models
+### Model Groups
 
-**Service** - Service definitions (WhatsApp, Instagram, etc.)
-**Country** - Country data with dial codes
-**Lock** - Number locking for orders
-**Cron** - Cron job tracking
-**User/Session** - Authentication
+**Authentication:**
+- `User` - Dashboard users with API keys for stubs API (`apiKey` format: `sk_<32 hex chars>`)
+- `Session` - Better Auth session management (related to User)
+
+**Devices:**
+- `Device` - Android SMS gateway devices with:
+  - Connection status (`online`/`offline`/`error`)
+  - SIM information (JSON array)
+  - Daily SMS limits (default: 100/day)
+  - FCM token for wake-up notifications
+  - Message statistics
+
+**Number Management:**
+- `Numbers` - Virtual phone numbers with:
+  - Quality score (0-100)
+  - Suspension tracking (`suspended`, `consecutiveFailures`)
+  - Lock state for orders
+  - Multiuse capability
+- `Lock` - Number-to-service locking (prevents conflicts)
+
+**Orders:**
+- `Orders` - OTP service orders linking:
+  - `number` → Numbers (via `countryid`)
+  - `serviceid` → Service
+  - `countryid` → Country
+  - Tracks OTP receipt (`isused`), message data (`message`)
+- `Message` - Received SMS messages from devices
+
+**Reference Data:**
+- `Service` - OTP services (WhatsApp, Telegram, etc.) with format templates
+- `Country` - Country data with dial codes
+
+**Bulk SMS:**
+- `BulkCampaign` - Campaigns with:
+  - Status flow: `pending` → `processing` → `completed`/`failed`/`cancelled`
+  - Device pool (JSON array of device IDs)
+  - Strategy (`round-robin`, `load-balanced`, `priority`)
+  - Statistics (sent, delivered, failed counts)
+- `BulkMessage` - Individual messages with:
+  - Status flow: `pending` → `queued` → `sent` → `delivered`/`failed`
+  - SMS encoding (`GSM-7` or `UCS-2`)
+  - Latency tracking
+  - Related to `BulkCampaign` (cascade delete)
+
+**System:**
+- `Cron` - Maintenance job execution tracking
+
+### Key Relationships
+
+```
+User → Session (one-to-many)
+Orders → Country, Service (many-to-one via ObjectId refs)
+Lock → Country, Service (many-to-one via ObjectId refs)
+BulkCampaign → BulkMessage (one-to-many, cascade delete)
+Numbers → Country (many-to-one via ObjectId ref)
+```
+
+### Common Field Patterns
+
+- **Timestamps:** `createdAt`, `updatedAt` on most models
+- **Status:** `active`, `status` fields for state tracking
+- **JSON Storage:** Complex data stored as `Json` type (flexible schema)
+- **ObjectId References:** Foreign keys use `@db.ObjectId` attribute
 
 ---
 
@@ -439,19 +493,20 @@ NEXT_PUBLIC_SERVER_URL="http://localhost:4000"
 
 ## Important Notes
 
-1. **MongoDB + Prisma:** Uses Prisma ORM with MongoDB (not PostgreSQL)
-2. **Socket Manager Global:** Always access via `getSocketManager()` from `websocket/manager.ts`
-3. **Request IDs:** All device commands requiring responses must include a `requestId`
-4. **Dashboard Connections:** Connect with `?isDashboard=true` query parameter
-5. **Type Safety:** tRPC changes automatically update client types
-6. **Job Queues:** BullMQ requires Redis to be running
-7. **Android URLs:** Injected via BuildConfig from local.properties
-8. **Stealth Mode:** Android app uses resurrection loop for background persistence
-9. **Bulk SMS Limits:** Devices limited to 100 SMS/day (configurable per device)
-10. **Circuit Breaker:** Devices auto-suspend after 3 consecutive failures with exponential backoff
-11. **Stubs API:** Standalone service on port 3000 for PHP-compatible order API
-12. **API Keys:** Generated per user for stubs API authentication (format: `sk_<hex>`)
-13. **nginx Routes:** `/stubs/handler_api.php` → localhost:3000, `/` → localhost:3001 (frontend)
+1. **Data Model:** Full schema in `server/prisma/schema.prisma` - see "Data Model" section for overview
+2. **MongoDB + Prisma:** Uses Prisma ORM with MongoDB (not PostgreSQL)
+3. **Socket Manager Global:** Always access via `getSocketManager()` from `websocket/manager.ts`
+4. **Request IDs:** All device commands requiring responses must include a `requestId`
+5. **Dashboard Connections:** Connect with `?isDashboard=true` query parameter
+6. **Type Safety:** tRPC changes automatically update client types
+7. **Job Queues:** BullMQ requires Redis to be running
+8. **Android URLs:** Injected via BuildConfig from local.properties
+9. **Stealth Mode:** Android app uses resurrection loop for background persistence
+10. **Bulk SMS Limits:** Devices limited to 100 SMS/day (configurable per device)
+11. **Circuit Breaker:** Devices auto-suspend after 3 consecutive failures with exponential backoff
+12. **Stubs API:** Standalone service on port 5000 for PHP-compatible order API
+13. **API Keys:** Generated per user for stubs API authentication (format: `sk_<hex>`)
+14. **nginx Routes:** `/stubs/handler_api.php` → localhost:5000, `/` → localhost:3000 (frontend)
 
 ---
 
@@ -462,8 +517,8 @@ All services managed via PM2:
 | Service | Port | Description |
 |---------|------|-------------|
 | sms-gateway | 4000 | Main backend server (tRPC, WebSocket) |
-| sms-frontend | 3001 | Next.js frontend (via nginx) |
-| stubs-api | 3000 | PHP-compatible legacy API |
+| sms-frontend | 3000 | Next.js frontend (via nginx) |
+| stubs-api | 5000 | PHP-compatible legacy API |
 | worker:status | - | Device status synchronization |
 | worker:keepalive | - | Device keep-alive checks |
 | worker:wakeup | - | FCM device wake-up |
@@ -501,9 +556,9 @@ Let's Encrypt certificate for HTTPS:
 **Routing:**
 | Path | Destination | Service |
 |------|-------------|---------|
-| `/stubs/handler_api.php` | localhost:3000 | Stubs API |
-| `/stubs/` | localhost:3000 | Stubs API |
-| `/` | localhost:3001 | Next.js Frontend |
+| `/stubs/handler_api.php` | localhost:5000 | Stubs API |
+| `/stubs/` | localhost:5000 | Stubs API |
+| `/` | localhost:3000 | Next.js Frontend |
 | `/trpc/:path*` | localhost:4000 | tRPC (via frontend proxy) |
 | `/api/auth/:path*` | localhost:4000 | Better Auth (via frontend proxy) |
 
@@ -537,7 +592,7 @@ The system provides a PHP-compatible legacy API for external integrations. This 
 ### Stubs API Location
 
 **Server:** `/var/www/stubs/` (standalone Node.js service)
-**Port:** 3000
+**Port:** 5000
 **PM2 Name:** `stubs-api`
 **Public Endpoint:** `https://syncmesh-datacore.shop/stubs/handler_api.php`
 
@@ -548,12 +603,12 @@ The nginx routes requests to the stubs API:
 ```nginx
 # /etc/nginx/sites-available/syncmesh-datacore.shop
 location = /stubs/handler_api.php {
-    proxy_pass http://localhost:3000/;
+    proxy_pass http://localhost:5000/;
     # ... proxy headers
 }
 
 location /stubs/ {
-    proxy_pass http://localhost:3000/;
+    proxy_pass http://localhost:5000/;
     # ... proxy headers
 }
 ```
@@ -618,7 +673,7 @@ stubs/
 │   │   └── orders.ts      # Order endpoints (getNumber, getStatus, setStatus)
 │   ├── lib/
 │   │   └── api-key.ts     # API key validation
-│   └── index.ts           # Express server (port 3000)
+│   └── index.ts           # Express server (port 5000)
 ├── prisma/
 │   └── schema.prisma      # Shared schema (symlink to server)
 ├── package.json
@@ -659,21 +714,7 @@ trpc.me.query()               // Get user profile
 
 Users generate unique API keys to authenticate requests to the stubs API. API keys are stored in the User collection and used for external integrations.
 
-### User Model (Updated)
-
-```prisma
-model User {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  email     String   @unique
-  password  String
-  name      String?
-  apiKey    String?  @unique  // NEW: API key field
-  emailVerified Boolean @default(false)
-  createdAt DateTime @default(now())
-  sessions  Session[]
-  @@map("user")
-}
-```
+**API Key Format:** `sk_<32 hex characters>` (stored in `User.apiKey` field)
 
 ### API Key Utilities
 
@@ -812,47 +853,6 @@ pending → queued → sent → delivered
 - 70 characters per segment
 - 67 characters for multipart (with UDH header)
 - Required for emojis, Cyrillic, Chinese, Arabic, etc.
-
-### Database Models
-
-**BulkCampaign:**
-```prisma
-model BulkCampaign {
-  id              String   @id
-  name            String
-  status          String   // pending, processing, completed, failed, cancelled
-  totalRecipients Int
-  sentCount       Int      @default(0)
-  deliveredCount  Int      @default(0)
-  failedCount     Int      @default(0)
-  message         String
-  scheduledAt     DateTime?
-  startedAt       DateTime?
-  completedAt     DateTime?
-  devicePool      Json     // Array of device IDs
-  strategy        String   // round-robin, load-balanced, priority
-  messages        BulkMessage[]
-}
-```
-
-**BulkMessage:**
-```prisma
-model BulkMessage {
-  id              String   @id
-  campaignId      String
-  recipientNumber String
-  message         String
-  status          String   // pending, queued, sent, delivered, failed
-  deviceId        String?
-  simSlot         Int      @default(1)
-  sentAt          DateTime?
-  deliveredAt     DateTime?
-  failedAt        DateTime?
-  failureReason   String?
-  retryCount      Int      @default(0)
-  campaign        BulkCampaign @relation
-}
-```
 
 ### Access URL
 
