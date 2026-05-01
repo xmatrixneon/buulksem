@@ -37,6 +37,23 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
+// Debounce hook for search input
+function useDebounce(value: string, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    }
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
 interface NumberData {
   _id: string;
   number: number;
