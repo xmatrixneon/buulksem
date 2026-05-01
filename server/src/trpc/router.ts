@@ -267,16 +267,45 @@ export const appRouter = router({
         limit: z.number().default(50),
         offset: z.number().default(0),
         search: z.string().optional(),
-      }).optional())
+        direction: z.enum(['forward', 'backward']).optional(),
+        cursor: z.any().optional(),
+      }))
       .query(async ({ input }) => {
-        const params = input || { limit: 50, offset: 0 }
+        const params = input
         const where: any = {}
 
         if (params.active !== undefined) where.active = params.active
         if (params.suspended !== undefined) where.suspended = params.suspended
         if (params.countryid) where.countryid = params.countryid
+
+        // Handle search: use MongoDB $regexMatch to search number as string
+        // (number field is Int, and 'contains' operator doesn't work on Int fields)
+        let matchingIds: string[] | undefined
         if (params.search) {
-          where.number = { contains: params.search }
+          const rawResults = await prisma.numbers.findRaw({
+            filter: {
+              $expr: {
+                $regexMatch: {
+                  input: { $toString: { $toLong: "$number" } },
+                  regex: params.search
+                }
+              }
+            },
+            options: { projection: { _id: 1 } }
+          })
+          const resultsArray: any[] = (rawResults as any) || []
+          matchingIds = resultsArray.map((r: any) => {
+            const id = r._id
+            if (id && typeof id === 'object' && id.$oid) {
+              return id.$oid
+            }
+            return String(id)
+          })
+          // If no matches, return empty early
+          if (matchingIds.length === 0) {
+            return []
+          }
+          where.id = { in: matchingIds }
         }
 
         // Fetch numbers with country data
@@ -402,10 +431,11 @@ export const appRouter = router({
       .input(z.object({
         filter: z.enum(['all', 'suspended', 'warning', 'active']).default('all'),
         page: z.number().default(1),
-        limit: z.number().default(50)
+        limit: z.number().default(50),
+        search: z.string().optional()
       }))
       .query(async ({ input }) => {
-        const { filter, page, limit } = input
+        const { filter, page, limit, search } = input
         const skip = (page - 1) * limit
 
         // Build where clause based on filter
@@ -424,6 +454,45 @@ export const appRouter = router({
             where.suspended = false
             break
           // 'all' - no filters
+        }
+
+        // Handle search: use MongoDB $regexMatch to search number as string
+        let matchingIds: string[] | undefined
+        if (search) {
+          const rawResults = await prisma.numbers.findRaw({
+            filter: {
+              $expr: {
+                $regexMatch: {
+                  input: { $toString: { $toLong: "$number" } },
+                  regex: search
+                }
+              }
+            },
+            options: { projection: { _id: 1 } }
+          })
+          const resultsArray: any[] = (rawResults as any) || []
+          matchingIds = resultsArray.map((r: any) => {
+            const id = r._id
+            if (id && typeof id === 'object' && id.$oid) {
+              return id.$oid
+            }
+            return String(id)
+          })
+          // If no matches, return empty early
+          if (matchingIds.length === 0) {
+            return {
+              success: true,
+              data: [],
+              pagination: { page, limit, total: 0, pages: 0 },
+              stats: {
+                totalCount: 0,
+                activeCount: await prisma.numbers.count({ where: { active: true } }),
+                suspendedCount: await prisma.numbers.count({ where: { suspended: true } }),
+                avgQuality: 0
+              }
+            }
+          }
+          where.id = { in: matchingIds }
         }
 
         const [numbers, totalCount] = await Promise.all([
@@ -558,6 +627,8 @@ export const appRouter = router({
         limit: z.number().default(50),
         offset: z.number().default(0),
         search: z.string().optional(),
+        direction: z.enum(['forward', 'backward']).optional(),
+        cursor: z.any().optional(),
       }))
       .query(async ({ input }) => {
         const params = input
@@ -567,10 +638,34 @@ export const appRouter = router({
           where.active = params.active
         }
 
+        // Handle search: use MongoDB $regexMatch to search number as string
+        // (number field is Int, and 'contains' operator doesn't work on Int fields)
+        let matchingIds: string[] | undefined
         if (params.search) {
-          where.OR = [
-            { number: { contains: params.search } },
-          ]
+          const rawResults = await prisma.orders.findRaw({
+            filter: {
+              $expr: {
+                $regexMatch: {
+                  input: { $toString: "$number" },
+                  regex: params.search
+                }
+              }
+            },
+            options: { projection: { _id: 1 } }
+          })
+          const resultsArray: any[] = (rawResults as any) || []
+          matchingIds = resultsArray.map((r: any) => {
+            const id = r._id
+            if (id && typeof id === 'object' && id.$oid) {
+              return id.$oid
+            }
+            return String(id)
+          })
+          // If no matches, return empty early
+          if (matchingIds.length === 0) {
+            return []
+          }
+          where.id = { in: matchingIds }
         }
 
         const orders = await prisma.orders.findMany({
@@ -746,11 +841,25 @@ export const appRouter = router({
       .input(z.object({
         receiver: z.string().optional(),
         limit: z.number().default(100),
-        offset: z.number().default(0)
+        offset: z.number().default(0),
+        search: z.string().optional(),
+        direction: z.enum(['forward', 'backward']).optional(),
+        cursor: z.any().optional(),
       }).optional())
       .query(async ({ input }) => {
         const params = input || { limit: 100, offset: 0 }
-        const where = params.receiver ? { receiver: params.receiver } : {}
+        const where: any = {}
+
+        if (params.receiver) where.receiver = params.receiver
+
+        // Handle search: search across sender, receiver, and message content
+        if (params.search) {
+          where.OR = [
+            { sender: { contains: params.search } },
+            { receiver: { contains: params.search } },
+            { message: { contains: params.search } }
+          ]
+        }
 
         return await prisma.message.findMany({
           where,
@@ -782,12 +891,27 @@ export const appRouter = router({
   // REFERENCE DATA
   // ============================================
   countries: router({
-    all: publicProcedure.query(async () => {
-      return await prisma.country.findMany({
-        where: { active: true },
-        orderBy: { name: 'asc' }
-      })
-    }),
+    all: publicProcedure
+      .input(z.object({
+        search: z.string().optional()
+      }).optional())
+      .query(async ({ input }) => {
+        const params = input || {}
+        const where: any = { active: true }
+
+        // Handle search: search across name and code
+        if (params.search) {
+          where.OR = [
+            { name: { contains: params.search, mode: 'insensitive' } },
+            { code: { contains: params.search, mode: 'insensitive' } }
+          ]
+        }
+
+        return await prisma.country.findMany({
+          where,
+          orderBy: { name: 'asc' }
+        })
+      }),
 
     add: protectedProcedure
       .input(z.object({
@@ -850,12 +974,27 @@ export const appRouter = router({
   }),
 
   services: router({
-    all: publicProcedure.query(async () => {
-      return await prisma.service.findMany({
-        where: { active: true },
-        orderBy: { name: 'asc' }
-      })
-    }),
+    all: publicProcedure
+      .input(z.object({
+        search: z.string().optional()
+      }).optional())
+      .query(async ({ input }) => {
+        const params = input || {}
+        const where: any = { active: true }
+
+        // Handle search: search across name and code
+        if (params.search) {
+          where.OR = [
+            { name: { contains: params.search, mode: 'insensitive' } },
+            { code: { contains: params.search, mode: 'insensitive' } }
+          ]
+        }
+
+        return await prisma.service.findMany({
+          where,
+          orderBy: { name: 'asc' }
+        })
+      }),
 
     add: protectedProcedure
       .input(z.object({
@@ -1166,7 +1305,9 @@ export const appRouter = router({
       .input(z.object({
         limit: z.number().default(100),
         startDate: z.string().optional(),
-        endDate: z.string().optional()
+        endDate: z.string().optional(),
+        search: z.string().optional(),
+        status: z.enum(['all', 'active', 'used', 'cancelled']).optional()
       }).optional())
       .query(async ({ input }) => {
         const params = input ?? { limit: 100 }
@@ -1178,6 +1319,33 @@ export const appRouter = router({
 
         if (params.endDate) {
           where.createdAt = { ...where.createdAt, lte: new Date(params.endDate) }
+        }
+
+        // Handle search: search across number field
+        if (params.search) {
+          // Convert search to number if it's numeric
+          const searchNum = parseInt(params.search)
+          if (!isNaN(searchNum)) {
+            where.number = searchNum
+          }
+        }
+
+        // Handle status filter
+        if (params.status) {
+          switch (params.status) {
+            case 'active':
+              where.active = true
+              where.isused = false
+              break
+            case 'used':
+              where.isused = true
+              break
+            case 'cancelled':
+              where.active = false
+              where.isused = false
+              break
+            // 'all' - no filter
+          }
         }
 
         const orders = await prisma.orders.findMany({

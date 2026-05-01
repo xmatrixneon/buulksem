@@ -10,6 +10,23 @@ import { Input } from "@/components/ui/input"
 import { Search, RefreshCw, ShoppingBag, Clock, CheckCircle, XCircle, Phone } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 
+// Debounce hook for search input
+function useDebounce(value: string, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
+
 interface Order {
   id: string
   _id: string
@@ -45,6 +62,9 @@ export default function ActiveOrdersPageWithTRPC() {
 
   const [search, setSearch] = useState("")
 
+  // Debounce search input (300ms delay)
+  const debouncedSearch = useDebounce(search, 300)
+
   // Get total count from overview (lightweight query)
   const { data: overviewData } = useQuery({
     ...trpc.overview.activation.queryOptions(),
@@ -61,7 +81,7 @@ export default function ActiveOrdersPageWithTRPC() {
     isFetchingNextPage,
   } = useInfiniteQuery({
     ...(trpc.orders.list as any).infiniteQueryOptions(
-      { active: true },
+      { active: true, search: debouncedSearch || undefined },
       {
         getNextPageParam: (lastPage: any) => {
           if (!lastPage || lastPage.length < 50) return undefined
@@ -81,14 +101,7 @@ export default function ActiveOrdersPageWithTRPC() {
   const totalOrders = overviewData?.todayOrders || 0
   const activeOrders = overviewData?.activeOrders || 0
 
-  const filteredOrders = activeOrdersList.filter((order: any) => {
-    const matchesSearch =
-      order.number?.toString().includes(search) ||
-      order.country?.toLowerCase().includes(search.toLowerCase()) ||
-      order.service?.toLowerCase().includes(search.toLowerCase())
-
-    return matchesSearch
-  })
+  // Orders are now filtered server-side, no client-side filtering needed
 
   // Intersection Observer for infinite scroll
   const observerTarget = useRef<HTMLDivElement>(null)
@@ -202,14 +215,14 @@ export default function ActiveOrdersPageWithTRPC() {
                       <div className="animate-pulse text-muted-foreground">Loading orders...</div>
                     </td>
                   </tr>
-                ) : filteredOrders.length === 0 ? (
+                ) : activeOrdersList.length === 0 ? (
                   <tr key="empty">
                     <td colSpan={7} className="text-center py-8">
                       <div className="text-muted-foreground">No orders found</div>
                     </td>
                   </tr>
                 ) : (
-                  filteredOrders.map((order: any) => (
+                  activeOrdersList.map((order: any) => (
                     <tr key={order._id} className="border-b hover:bg-muted/50">
                       <td className="p-4">
                         <div className="flex items-center gap-2">
@@ -256,7 +269,7 @@ export default function ActiveOrdersPageWithTRPC() {
       )}
 
       {/* Result Count */}
-      {!isLoading && filteredOrders.length > 0 && (
+      {!isLoading && activeOrdersList.length > 0 && (
         <div className="text-center py-4 text-sm text-muted-foreground">
           {hasNextPage
             ? `Showing ${activeOrdersList.length} of ${activeOrders} active orders (scroll for more...)`

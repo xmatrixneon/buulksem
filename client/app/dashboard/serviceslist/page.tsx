@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
 import Link from "next/link";
@@ -39,6 +39,23 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
+// Debounce hook for search input
+function useDebounce(value: string, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
+
 interface Service {
   id: string;
   name: string;
@@ -60,13 +77,16 @@ export default function ServicesPageWithTRPC() {
   const [search, setSearch] = useState("");
   const [newFormatInput, setNewFormatInput] = useState("");
 
-  // tRPC query for fetching services
+  // Debounce search input (300ms delay)
+  const debouncedSearch = useDebounce(search, 300)
+
+  // tRPC query for fetching services with server-side search
   const {
     data: services = [],
     isLoading,
     refetch,
   } = useQuery({
-    ...trpc.services.all.queryOptions(),
+    ...trpc.services.all.queryOptions({ search: debouncedSearch || undefined }),
     refetchOnWindowFocus: false,
   });
 
@@ -192,11 +212,7 @@ export default function ServicesPageWithTRPC() {
     await deleteMutation.mutateAsync({ id: serviceToDelete });
   };
 
-  // Filter services
-  const filteredServices = services.filter((service: any) =>
-    service.name.toLowerCase().includes(search.toLowerCase()) ||
-    service.code.toLowerCase().includes(search.toLowerCase())
-  );
+  // Services are now filtered server-side, no client-side filtering needed
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -259,14 +275,14 @@ export default function ServicesPageWithTRPC() {
                       <div className="animate-pulse text-muted-foreground">Loading services...</div>
                     </TableCell>
                   </TableRow>
-                ) : filteredServices.length === 0 ? (
+                ) : services.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8">
                       <div className="text-muted-foreground">No services found</div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredServices.map((service: any) => (
+                  services.map((service: any) => (
                     <TableRow key={service.id}>
                       <TableCell>
                         {service.image ? (

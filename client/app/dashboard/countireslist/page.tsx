@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,23 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
+// Debounce hook for search input
+function useDebounce(value: string, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
+
 interface Country {
   _id: string;
   name: string;
@@ -47,13 +64,16 @@ export default function CountriesPageWithTRPC() {
   const [countryToDelete, setCountryToDelete] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
-  // tRPC query for fetching countries
+  // Debounce search input (300ms delay)
+  const debouncedSearch = useDebounce(search, 300)
+
+  // tRPC query for fetching countries with server-side search
   const {
     data: countries = [],
     isLoading,
     refetch,
   } = useQuery({
-    ...trpc.countries.all.queryOptions(),
+    ...trpc.countries.all.queryOptions({ search: debouncedSearch || undefined }),
     refetchOnWindowFocus: false,
   });
 
@@ -131,11 +151,7 @@ export default function CountriesPageWithTRPC() {
     await deleteMutation.mutateAsync({ id: countryToDelete });
   };
 
-  // Filter countries
-  const filteredCountries = countries.filter((country: any) =>
-    country.name.toLowerCase().includes(search.toLowerCase()) ||
-    country.code.toLowerCase().includes(search.toLowerCase())
-  );
+  // Countries are now filtered server-side, no client-side filtering needed
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -188,14 +204,14 @@ export default function CountriesPageWithTRPC() {
                       <div className="animate-pulse text-muted-foreground">Loading countries...</div>
                     </TableCell>
                   </TableRow>
-                ) : filteredCountries.length === 0 ? (
+                ) : countries.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8">
                       <div className="text-muted-foreground">No countries found</div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredCountries.map((country: any) => (
+                  countries.map((country: any) => (
                     <TableRow key={country._id}>
                       <TableCell>
                         {editId === country._id ? (

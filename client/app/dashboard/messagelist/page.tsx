@@ -30,6 +30,23 @@ interface Message {
   createdAt: Date
 }
 
+// Debounce hook for search input
+function useDebounce(value: string, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
+
 export default function MessagesGridWithTRPC() {
   const trpc = useTRPC()
 
@@ -38,7 +55,10 @@ export default function MessagesGridWithTRPC() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null)
 
-  // Infinite scroll query for messages using tRPC
+  // Debounce search input (300ms delay)
+  const debouncedSearch = useDebounce(search, 300)
+
+  // Infinite scroll query for messages using tRPC with server-side search
   const {
     data: infiniteData,
     isLoading,
@@ -48,21 +68,18 @@ export default function MessagesGridWithTRPC() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['messages', 'list'],
-    queryFn: async ({ pageParam = 0 }) => {
-      const result = await fetch(`/trpc/messages.list?input=${encodeURIComponent(JSON.stringify({
+    ...(trpc.messages.list as any).infiniteQueryOptions(
+      {
         limit: 50,
-        offset: pageParam,
-      }))}`)
-      if (!result.ok) throw new Error('Failed to fetch')
-      const data = await result.json()
-      return data.result.data.json
-    },
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
-      if (lastPage.length < 50) return undefined
-      return allPages.flat().length
-    },
+        search: debouncedSearch || undefined
+      },
+      {
+        getNextPageParam: (lastPage: any, allPages: any) => {
+          if (!lastPage || lastPage.length < 50) return undefined
+          return allPages.flat().length
+        },
+      }
+    ),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -145,12 +162,7 @@ export default function MessagesGridWithTRPC() {
     }
   }
 
-  // Filter messages
-  const filteredMessages = messages.filter((m: any) =>
-    m.sender.toLowerCase().includes(search.toLowerCase()) ||
-    m.message.toLowerCase().includes(search.toLowerCase()) ||
-    m.receiver.toLowerCase().includes(search.toLowerCase())
-  )
+  // Messages are now filtered server-side, no client-side filtering needed
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -196,7 +208,7 @@ export default function MessagesGridWithTRPC() {
             </Card>
           ))}
         </div>
-      ) : filteredMessages.length === 0 ? (
+      ) : messages.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
             <MessageSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
@@ -206,7 +218,7 @@ export default function MessagesGridWithTRPC() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredMessages.map((msg: any) => (
+            {messages.map((msg: any) => (
               <Card key={msg.id} className="relative group">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
@@ -272,7 +284,7 @@ export default function MessagesGridWithTRPC() {
           {/* Result Count */}
           <div className="flex items-center justify-center text-sm text-muted-foreground py-4">
             {hasNextPage
-              ? `Showing ${filteredMessages.length}+ messages (scroll down for more...)`
+              ? `Showing ${messages.length}+ messages (scroll down for more...)`
               : `Showing all ${messages.length} messages`
             }
           </div>

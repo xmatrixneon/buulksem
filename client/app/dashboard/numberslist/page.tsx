@@ -81,13 +81,6 @@ export default function NumbersGridWithTRPC() {
   // Debounce search input (300ms delay)
   const debouncedSearch = useDebounce(search, 300);
 
-  // Build query parameters for server-side filtering
-  const queryParams = {
-    limit: 50,
-    search: debouncedSearch || undefined,
-    active: filter === "all" ? undefined : filter === "active" ? true : false
-  };
-
   // Get real database counts from overview API
   const { data: overviewData } = useQuery({
     ...trpc.overview.activation.queryOptions(),
@@ -104,7 +97,11 @@ export default function NumbersGridWithTRPC() {
     isFetchingNextPage,
   } = useInfiniteQuery({
     ...(trpc.numbers.list as any).infiniteQueryOptions(
-      queryParams,
+      {
+        limit: 50,
+        search: debouncedSearch || undefined,
+        active: filter === "all" ? undefined : filter === "active" ? true : false
+      },
       {
         getNextPageParam: (lastPage: any, allPages: any) => {
           if (!lastPage || lastPage.length < 50) return undefined

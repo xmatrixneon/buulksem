@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useTRPC } from "@/lib/trpc/client"
 import { Button } from "@/components/ui/button"
@@ -32,6 +32,23 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Search, Filter, Calendar, MessageSquare, RefreshCw, History } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
+
+// Debounce hook for search input
+function useDebounce(value: string, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
 
 interface Country {
   _id: string
@@ -71,7 +88,10 @@ export default function OrdersPageWithTRPC() {
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
 
-  // tRPC query for fetching activation data
+  // Debounce search input (300ms delay)
+  const debouncedSearch = useDebounce(search, 300)
+
+  // tRPC query for fetching activation data with server-side search and status filter
   const {
     data: orders = [] as any[],
     isLoading,
@@ -80,27 +100,14 @@ export default function OrdersPageWithTRPC() {
     ...trpc.overview.data.queryOptions({
       limit: 100,
       startDate: from || undefined,
-      endDate: to || undefined
+      endDate: to || undefined,
+      search: debouncedSearch || undefined,
+      status: statusFilter === "all" ? undefined : statusFilter as any
     }),
     refetchOnWindowFocus: false,
   })
 
-  // Filter orders
-  const filteredOrders = (orders as any[]).filter((order: any) => {
-    const matchesSearch =
-      !search ||
-      order.number?.toString().includes(search) ||
-      order.country?.name?.toLowerCase().includes(search.toLowerCase()) ||
-      order.service?.name?.toLowerCase().includes(search.toLowerCase())
-
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "active" && order.active) ||
-      (statusFilter === "completed" && !order.active && order.isused) ||
-      (statusFilter === "expired" && !order.active && !order.isused)
-
-    return matchesSearch && matchesStatus
-  })
+  // Orders are now filtered server-side, no client-side filtering needed
 
   const formatIST = (dateStr: Date) => {
     const date = new Date(dateStr)
@@ -221,14 +228,14 @@ export default function OrdersPageWithTRPC() {
                       <div className="animate-pulse text-muted-foreground">Loading orders...</div>
                     </TableCell>
                   </TableRow>
-                ) : filteredOrders.length === 0 ? (
+                ) : orders.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8">
                       <div className="text-muted-foreground">No orders found</div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredOrders.map((order: any) => (
+                  orders.map((order: any) => (
                     <TableRow key={order._id}>
                       <TableCell className="font-medium">{order.number}</TableCell>
                       <TableCell>

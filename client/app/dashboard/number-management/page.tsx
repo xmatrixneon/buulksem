@@ -77,7 +77,7 @@ export default function NumberManagement() {
     isFetchingNextPage,
   } = useInfiniteQuery({
     ...(trpc.numbers.quality as any).infiniteQueryOptions(
-      { filter },
+      { filter, search: search || undefined },
       {
         getNextPageParam: (lastPage: any, allPages: any) => {
           if (!lastPage?.data || lastPage.data.length < 50) return undefined
@@ -100,11 +100,7 @@ export default function NumberManagement() {
     avgQuality: 0
   }
 
-  // Filter by search (client-side since server doesn't support search yet)
-  const filteredNumbers = numbers.filter((n: any) => {
-    if (!search) return true;
-    return n.number?.toString().includes(search);
-  });
+  // Numbers are now filtered server-side, no client-side filtering needed
 
   // Intersection Observer for infinite scroll
   const observerTarget = useRef<HTMLDivElement>(null)
@@ -145,10 +141,10 @@ export default function NumberManagement() {
   })
 
   const handleSelectAll = () => {
-    if (selectedNumbers.size === filteredNumbers.length) {
+    if (selectedNumbers.size === numbers.length) {
       setSelectedNumbers(new Set());
     } else {
-      setSelectedNumbers(new Set(filteredNumbers.map((n: any) => n.number)));
+      setSelectedNumbers(new Set(numbers.map((n: any) => n.number)));
     }
   };
 
@@ -364,7 +360,7 @@ export default function NumberManagement() {
                 </div>
               ))}
             </div>
-          ) : filteredNumbers.length === 0 ? (
+          ) : numbers.length === 0 ? (
             <div className="text-center py-16">
               <Phone className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
               <p className="text-muted-foreground text-lg">No numbers found</p>
@@ -377,7 +373,7 @@ export default function NumberManagement() {
                     <TableRow>
                       <TableHead className="w-[50px]">
                         <Checkbox
-                          checked={selectedNumbers.size === filteredNumbers.length && filteredNumbers.length > 0}
+                          checked={selectedNumbers.size === numbers.length && numbers.length > 0}
                           onCheckedChange={handleSelectAll}
                         />
                       </TableHead>
@@ -394,7 +390,7 @@ export default function NumberManagement() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredNumbers.map((number: any) => (
+                    {numbers.map((number: any) => (
                       <TableRow key={number._id}>
                         <TableCell>
                           <Checkbox
@@ -463,7 +459,7 @@ export default function NumberManagement() {
                   {hasNextPage
                     ? `Showing ${numbers.length} of ${totalCount} total numbers (scroll for more...)`
                     : search
-                      ? `Showing ${filteredNumbers.length} of ${totalCount} total numbers (filtered)`
+                      ? `Showing ${numbers.length} of ${totalCount} total numbers (filtered)`
                       : `Showing all ${totalCount} numbers`
                   }
                 </div>
