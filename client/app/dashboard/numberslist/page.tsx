@@ -186,16 +186,6 @@ export default function NumbersGridWithTRPC() {
     );
   };
 
-  // Client-side filtering (search and status filter)
-  const filteredNumbers = numbers
-    .filter((n: any) => n.number.toString().includes(search))
-    .filter((n: any) => {
-      if (filter === "active") return n.active;
-      if (filter === "inactive") return !n.active;
-      return true;
-    })
-    .sort((a: any, b: any) => (a.active === b.active ? 0 : a.active ? -1 : 1));
-
   // Real database counts from overview API (not based on scroll limit)
   const totalCount = overviewData?.totalNumbers ?? 0;
   const activeCount = overviewData?.activeNumbers ?? 0;
@@ -315,14 +305,14 @@ export default function NumbersGridWithTRPC() {
                       <div className="animate-pulse text-muted-foreground">Loading numbers...</div>
                     </TableCell>
                   </TableRow>
-                ) : filteredNumbers.length === 0 ? (
+                ) : numbers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8">
                       <div className="text-muted-foreground">No numbers found</div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredNumbers.map((n: any) => (
+                  numbers.map((n: any) => (
                     <TableRow key={n._id}>
                       <TableCell className="font-medium">{n.number}</TableCell>
                       <TableCell>
@@ -334,7 +324,7 @@ export default function NumbersGridWithTRPC() {
                               className="w-5 h-5 rounded-full"
                             />
                           )}
-                          <span>{n.countryid?.name || "N/A"}</span>
+                          <span>{n.countryid?.name || "Unknown"}</span>
                         </div>
                       </TableCell>
                       <TableCell>{n.operator || "Unknown"}</TableCell>
@@ -383,12 +373,12 @@ export default function NumbersGridWithTRPC() {
       )}
 
       {/* Result Count */}
-      {!isLoading && filteredNumbers.length > 0 && (
+      {!isLoading && numbers.length > 0 && (
         <div className="text-center py-4 text-sm text-muted-foreground">
           {hasNextPage
             ? `Showing ${numbers.length} of ${totalCount} total numbers (scroll for more...)`
             : search || filter !== "all"
-              ? `Showing ${filteredNumbers.length} of ${totalCount} total numbers (filtered)`
+              ? `Showing ${numbers.length} of ${totalCount} total numbers (filtered)`
               : `Showing all ${totalCount} numbers`
           }
         </div>
