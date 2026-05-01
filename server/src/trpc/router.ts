@@ -279,12 +279,37 @@ export const appRouter = router({
           where.number = { contains: params.search }
         }
 
-        return await prisma.numbers.findMany({
+        // Fetch numbers with country data
+        const numbers = await prisma.numbers.findMany({
           where,
           take: params.limit,
           skip: params.offset,
           orderBy: { updatedAt: 'desc' }
         })
+
+        // Populate country data for each number
+        const numbersWithCountry = await Promise.all(
+          numbers.map(async (number) => {
+            let country = null
+            if (number.countryid) {
+              country = await prisma.country.findFirst({
+                where: { id: number.countryid }
+              })
+            }
+
+            return {
+              ...number,
+              countryid: country ? {
+                _id: country.id,
+                name: country.name,
+                flag: country.flag,
+                code: country.code
+              } : null
+            }
+          })
+        )
+
+        return numbersWithCountry
       }),
 
     getByNumber: publicProcedure
